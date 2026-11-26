@@ -1,4 +1,39 @@
-import { AbilityDef, AbilityId, BossId, UpgradeCard } from '../game/types';
+import { AbilityDef, AbilityId, BossId, DifficultyPreset, UpgradeCard } from '../game/types';
+
+export const DIFFICULTY_PRESETS: DifficultyPreset[] = [
+  {
+    id: 'relaxed',
+    label: 'Relaxed',
+    speedMult: 0.65,
+    spawnRateMult: 0.72,
+    damageMult: 0.7,
+    description: 'Slower waves & gentler damage — chill studio pace',
+  },
+  {
+    id: 'standard',
+    label: 'Standard',
+    speedMult: 0.85,
+    spawnRateMult: 0.88,
+    damageMult: 0.85,
+    description: 'Balanced roguelike challenge across all 3 bosses',
+  },
+  {
+    id: 'challenging',
+    label: 'Challenging',
+    speedMult: 1.0,
+    spawnRateMult: 1.02,
+    damageMult: 1.0,
+    description: 'Brisk waves & sharp reflexes required',
+  },
+  {
+    id: 'master',
+    label: 'Master',
+    speedMult: 1.22,
+    spawnRateMult: 1.2,
+    damageMult: 1.2,
+    description: 'Relentless ink swarms for high-WPM masters',
+  },
+];
 
 export const ALL_ABILITIES: Record<AbilityId, AbilityDef> = {
   pulse: {
@@ -49,6 +84,27 @@ export const ALL_ABILITIES: Record<AbilityId, AbilityDef> = {
     label: '!blot',
     cost: 25,
     description: 'Clears Smudge & blasts nearest enemy with ink',
+  },
+  swarm: {
+    id: 'swarm',
+    command: 'swarm',
+    label: '!swarm',
+    cost: 50,
+    description: 'Launches 6 homing calligraphy ink darts across the page',
+  },
+  orbit: {
+    id: 'orbit',
+    command: 'orbit',
+    label: '!orbit',
+    cost: 75,
+    description: 'Dual spinning pencil lasers sweep the arena for 4.5s',
+  },
+  drone: {
+    id: 'drone',
+    command: 'drone',
+    label: '!drone',
+    cost: 50,
+    description: 'Deploys 2 origami hunter drones that auto-zap foes for 8s',
   },
 };
 
@@ -101,6 +157,30 @@ export const UPGRADE_POOL: UpgradeCard[] = [
     kind: 'ability',
     abilityId: 'blot',
     description: 'Active (25): Wipe Smudge & blast nearest enemy.',
+  },
+  {
+    id: 'ab_swarm',
+    keyword: 'darts',
+    title: '!swarm',
+    kind: 'ability',
+    abilityId: 'swarm',
+    description: 'Active (50): Fire 6 curving homing ink darts at foes.',
+  },
+  {
+    id: 'ab_orbit',
+    keyword: 'orbit',
+    title: '!orbit',
+    kind: 'ability',
+    abilityId: 'orbit',
+    description: 'Active (75): Dual spinning pencil lasers sweep for 4.5s.',
+  },
+  {
+    id: 'ab_drone',
+    keyword: 'drone',
+    title: '!drone',
+    kind: 'ability',
+    abilityId: 'drone',
+    description: 'Active (50): Launch 2 hunting paper drones for 8s.',
   },
 
   // Passive Modifiers

@@ -1,5 +1,5 @@
 import { SoundEngine } from '../audio/sound';
-import { ALL_ABILITIES, BOSS_CONFIGS, UPGRADE_POOL } from '../data/content';
+import { ALL_ABILITIES, BOSS_CONFIGS, DIFFICULTY_PRESETS, UPGRADE_POOL } from '../data/content';
 import { MEDIUM_WORDS, SHORT_WORDS, pickWord } from '../data/words';
 import {
   AbilityDef,
@@ -8,11 +8,15 @@ import {
   BossId,
   BossState,
   DeathBoom,
+  DifficultyPreset,
   Enemy,
   EnemyKind,
   FloatingText,
   GameMode,
+  HomingDart,
+  HunterDrone,
   InkStain,
+  OrbitLaserState,
   Particle,
   PlayerPassives,
   Projectile,
@@ -53,6 +57,12 @@ export class TypingGlyphGame {
   private mode: GameMode = 'title';
   private titleBuffer = '';
   private retryBuffer = '';
+  private difficultyIndex = 1; // 0=Relaxed, 1=Standard, 2=Challenging, 3=Master
+
+  // Active weapon ability entities
+  private homingDarts: HomingDart[] = [];
+  private hunterDrones: HunterDrone[] = [];
+  private orbitLaser: OrbitLaserState | null = null;
 
   // Run & Stage state
   private elapsed = 0;
@@ -136,6 +146,7 @@ export class TypingGlyphGame {
     this.ctx = ctx;
 
     this.createPaperGrainPattern();
+    this.loadDifficulty();
     this.resize();
 
     window.addEventListener('resize', this.handleResize);
@@ -214,11 +225,55 @@ export class TypingGlyphGame {
     this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
   }
 
+  private loadDifficulty(): void {
+    try {
+      const saved = window.localStorage.getItem('typingglyph_difficulty');
+      if (saved !== null) {
+        const idx = Number(saved);
+        if (idx >= 0 && idx < DIFFICULTY_PRESETS.length) {
+          this.difficultyIndex = idx;
+        }
+      }
+    } catch {
+      // ignore storage errors
+    }
+  }
+
+  private setDifficultyIndex(idx: number): void {
+    this.difficultyIndex = Math.max(0, Math.min(DIFFICULTY_PRESETS.length - 1, idx));
+    try {
+      window.localStorage.setItem('typingglyph_difficulty', String(this.difficultyIndex));
+    } catch {
+      // ignore
+    }
+  }
+
+  private getDifficulty(): DifficultyPreset {
+    return DIFFICULTY_PRESETS[this.difficultyIndex] ?? DIFFICULTY_PRESETS[1];
+  }
+
   private handleCanvasClick = (e: MouseEvent): void => {
     // Top-right mute button
     if (e.clientX > this.width - 130 && e.clientY < 48) {
       this.sound.toggleMute();
       return;
+    }
+
+    // Title screen difficulty slider click
+    if (this.mode === 'title') {
+      const slider = this.getDifficultySliderRect();
+      if (
+        e.clientX >= slider.x - 24 &&
+        e.clientX <= slider.x + slider.w + 24 &&
+        e.clientY >= slider.y - 22 &&
+        e.clientY <= slider.y + 34
+      ) {
+        const t = Math.max(0, Math.min(1, (e.clientX - slider.x) / slider.w));
+        const idx = Math.round(t * (DIFFICULTY_PRESETS.length - 1));
+        this.setDifficultyIndex(idx);
+        this.sound.playKeyHit(4 + idx * 3);
+        return;
+      }
     }
 
     // Allow clicking draft cards too (handy fallback alongside pure typing)
@@ -280,6 +335,9 @@ export class TypingGlyphGame {
     this.floatingTexts = [];
     this.beams = [];
     this.deathBooms = [];
+    this.homingDarts = [];
+    this.hunterDrones = [];
+    this.orbitLaser = null;
     this.lockedEnemyId = null;
     this.abilityMode = false;
     this.abilityBuffer = '';
@@ -311,13 +369,25 @@ export class TypingGlyphGame {
     if (this.mode === 'title') {
       this.sound.startMusic();
       this.sound.music.setIntensity(0);
-      if (key === 'Enter' || key === ' ') {
+      if (key === 'ArrowLeft') {
+        e.preventDefault();
+        this.setDifficultyIndex(this.difficultyIndex - 1);
+        this.sound.playKeyHit(4 + this.difficultyIndex * 3);
+        return;
+      }
+      if (key === 'ArrowRight') {
+        e.preventDefault();
+        this.setDifficultyIndex(this.difficultyIndex + 1);
+        this.sound.playKeyHit(4 + this.difficultyIndex * 3);
+        return;
+      }
+      if (key === 'Enter') {
         e.preventDefault();
         this.sound.playAbilityCast();
         this.startNewRun();
         return;
       }
-      if (key === 'Backspace') {
+      if (key === 'Backspace' || key === ' ') {
         e.preventDefault();
         this.titleBuffer = '';
         return;
@@ -374,7 +444,7 @@ export class TypingGlyphGame {
 
     // Typing-to-select Upgrade Draft
     if (this.mode === 'draft') {
-      if (key === 'Backspace') {
+      if (key === 'Backspace' || key === ' ') {
         e.preventDefault();
         if (this.draftLockedIndex !== null) {
           this.draftLockedIndex = null;
@@ -403,8 +473,8 @@ export class TypingGlyphGame {
 
     if (this.mode !== 'playing') return;
 
-    // Detargeting / canceling ability mode
-    if (key === 'Backspace') {
+    // Detargeting / canceling ability mode (Backspace OR Spacebar!)
+    if (key === 'Backspace' || key === ' ') {
       e.preventDefault();
       if (this.abilityMode) {
         this.abilityMode = false;
@@ -434,16 +504,6 @@ export class TypingGlyphGame {
       this.abilityMode = true;
       this.abilityBuffer = '';
       this.sound.playKeyHit(8);
-      return;
-    }
-
-    // Spacebar advances boss passage if currently on a space
-    if (key === ' ' && !this.abilityMode && this.boss && this.bossLocked) {
-      e.preventDefault();
-      const ch = this.boss.passage[this.boss.typedIndex];
-      if (ch === ' ') {
-        this.advanceBossPassage();
-      }
       return;
     }
 
@@ -486,12 +546,22 @@ export class TypingGlyphGame {
       return !this.ownedUpgradeIds.has(card.id);
     });
 
-    // Pick 3 cards with guaranteed unique starting letters
+    // Pick 3 cards with guaranteed unique starting letters (ensure at least 1 active ability if slots open)
     const shuffled = [...eligible].sort(() => Math.random() - 0.5);
     const chosen: UpgradeCard[] = [];
     const usedLetters = new Set<string>();
+
+    if (canAddAbility) {
+      const firstAbility = shuffled.find((c) => c.kind === 'ability');
+      if (firstAbility) {
+        chosen.push(firstAbility);
+        usedLetters.add(firstAbility.keyword[0]);
+      }
+    }
+
     for (const card of shuffled) {
       if (chosen.length >= 3) break;
+      if (chosen.includes(card)) continue;
       const first = card.keyword[0];
       if (!usedLetters.has(first)) {
         usedLetters.add(first);
@@ -769,6 +839,78 @@ export class TypingGlyphGame {
           this.stripEnemyLayer(closest, false);
         }
         this.showToast(hadSmudge ? '!blot — Smudge Cleared!' : '!blot — Ink Bolt');
+        break;
+      }
+
+      case 'swarm': {
+        const count = 6;
+        for (let i = 0; i < count; i++) {
+          const angle = (i / count) * Math.PI * 2 + (Math.random() - 0.5) * 0.35;
+          const speed = 360 + Math.random() * 80;
+          const target = this.enemies.length > 0 ? this.enemies[i % this.enemies.length] : null;
+          this.homingDarts.push({
+            x: cx + Math.cos(angle) * (PLAYER_RADIUS + 4),
+            y: cy + Math.sin(angle) * (PLAYER_RADIUS + 4),
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed,
+            targetId: target ? target.id : null,
+            life: 2.6,
+            trail: [{ x: cx, y: cy }],
+          });
+        }
+        this.ripples.push({
+          x: cx,
+          y: cy,
+          radius: PLAYER_RADIUS,
+          maxRadius: 90,
+          life: 0.35,
+          maxLife: 0.35,
+          color: PALETTE.crimson,
+          lineWidth: 2,
+        });
+        this.showToast('!swarm — Homing Ink Darts!');
+        break;
+      }
+
+      case 'orbit': {
+        this.orbitLaser = {
+          timer: 4.5,
+          maxTimer: 4.5,
+          angle: Math.random() * Math.PI * 2,
+          tickCooldowns: new Map(),
+        };
+        this.screenShake = Math.max(this.screenShake, 5);
+        this.showToast('!orbit — Spinning Pencil Lasers!');
+        break;
+      }
+
+      case 'drone': {
+        for (let i = 0; i < 2; i++) {
+          const a = i * Math.PI + Math.random() * 0.6;
+          this.hunterDrones.push({
+            x: cx + Math.cos(a) * 34,
+            y: cy + Math.sin(a) * 34,
+            vx: Math.cos(a) * 220,
+            vy: Math.sin(a) * 220,
+            angle: a,
+            life: 8.0,
+            maxLife: 8.0,
+            fireCooldown: 0.2 + i * 0.25,
+            targetId: null,
+          });
+        }
+        this.ripples.push({
+          x: cx,
+          y: cy,
+          radius: PLAYER_RADIUS,
+          maxRadius: 72,
+          life: 0.35,
+          maxLife: 0.35,
+          color: PALETTE.ink,
+          lineWidth: 1.8,
+          dashed: true,
+        });
+        this.showToast('!drone — Origami Hunters Deployed!');
         break;
       }
     }
@@ -1354,7 +1496,8 @@ export class TypingGlyphGame {
   private spawnDotAt(x: number, y: number): void {
     const cx = this.width / 2;
     const cy = this.height / 2;
-    const speedScale = 1 + (this.stage - 1) * 0.16;
+    const diff = this.getDifficulty();
+    const speedScale = (1 + (this.stage - 1) * 0.14) * diff.speedMult;
     this.enemies.push({
       id: this.nextEnemyId++,
       kind: 'dot',
@@ -1362,7 +1505,7 @@ export class TypingGlyphGame {
       y,
       radius: 6,
       speed: 44 * speedScale,
-      damage: 15,
+      damage: Math.round(15 * diff.damageMult),
       word: this.pickFreshWord('dot'),
       typedCount: 0,
       armor: 1,
@@ -1417,15 +1560,16 @@ export class TypingGlyphGame {
     const x = cx + cos * edgeDist;
     const y = cy + sin * edgeDist;
 
-    const speedScale = 1 + (this.stage - 1) * 0.16 + Math.min(this.stageTimer / 180, 0.25);
+    const diff = this.getDifficulty();
+    const speedScale = (1 + (this.stage - 1) * 0.14 + Math.min(this.stageTimer / 200, 0.2)) * diff.speedMult;
     const word = this.pickFreshWord(kind);
 
     const configs: Record<EnemyKind, { radius: number; speed: number; damage: number; armor: number }> = {
-      dot: { radius: 6, speed: 39 * speedScale, damage: 15, armor: 1 },
-      ring: { radius: 10, speed: 32 * speedScale, damage: 20, armor: 1 },
-      arrow: { radius: 9, speed: 58 * speedScale, damage: 20, armor: 1 },
-      pentagon: { radius: 11, speed: 24 * speedScale, damage: 35, armor: 2 },
-      diamond: { radius: 11, speed: 30 * speedScale, damage: 25, armor: 1 },
+      dot: { radius: 6, speed: 39 * speedScale, damage: Math.round(15 * diff.damageMult), armor: 1 },
+      ring: { radius: 10, speed: 32 * speedScale, damage: Math.round(20 * diff.damageMult), armor: 1 },
+      arrow: { radius: 9, speed: 56 * speedScale, damage: Math.round(20 * diff.damageMult), armor: 1 },
+      pentagon: { radius: 11, speed: 24 * speedScale, damage: Math.round(35 * diff.damageMult), armor: 2 },
+      diamond: { radius: 11, speed: 30 * speedScale, damage: Math.round(25 * diff.damageMult), armor: 1 },
     };
 
     const cfg = configs[kind];
@@ -1550,14 +1694,15 @@ export class TypingGlyphGame {
       if (this.stageTimer >= STAGE_WAVE_DURATION) {
         this.spawnStageBoss();
       } else {
-        // Wave spawner
+        // Wave spawner (scaled by difficulty slider)
         this.spawnTimer -= dt;
         if (this.spawnTimer <= 0) {
-          const maxActive = Math.min(18, 5 + this.stage * 3 + Math.floor(this.stageTimer / 20));
-          if (this.enemies.length < maxActive) {
+          const diff = this.getDifficulty();
+          const maxActive = Math.min(18, Math.round((5 + this.stage * 2.5 + Math.floor(this.stageTimer / 22)) * diff.spawnRateMult));
+          if (this.enemies.length < Math.max(3, maxActive)) {
             this.spawnEnemy();
           }
-          const baseInterval = Math.max(0.7, 2.15 - (this.stage - 1) * 0.35 - this.stageTimer * 0.008);
+          const baseInterval = Math.max(0.75, 2.25 - (this.stage - 1) * 0.32 - this.stageTimer * 0.007) / diff.spawnRateMult;
           this.spawnTimer = baseInterval * (0.85 + Math.random() * 0.3);
         }
       }
@@ -1665,6 +1810,157 @@ export class TypingGlyphGame {
       db.rotation += dt * 2.6;
       return db.life > 0;
     });
+
+    this.updateWeaponAbilities(dt, cx, cy);
+  }
+
+  private updateWeaponAbilities(dt: number, cx: number, cy: number): void {
+    // 1. Homing Ink Darts (!swarm)
+    const activeDarts: HomingDart[] = [];
+    for (const dart of this.homingDarts) {
+      dart.life -= dt;
+      if (dart.life <= 0) continue;
+
+      let target = dart.targetId !== null ? this.enemies.find((e) => e.id === dart.targetId) : undefined;
+      if (!target && this.enemies.length > 0) {
+        // Pick nearest enemy to dart
+        let bestD = Infinity;
+        for (const en of this.enemies) {
+          const d = Math.hypot(en.x - dart.x, en.y - dart.y);
+          if (d < bestD) {
+            bestD = d;
+            target = en;
+          }
+        }
+        dart.targetId = target ? target.id : null;
+      }
+
+      if (target) {
+        const dx = target.x - dart.x;
+        const dy = target.y - dart.y;
+        const dist = Math.hypot(dx, dy) || 1;
+        if (dist <= target.radius + 14) {
+          this.spawnParticles(target.x, target.y, PALETTE.crimson, 8);
+          this.sound.playKeyHit(12);
+          this.damageEnemyLetters(target, 2);
+          continue; // dart consumed on hit
+        }
+        const desiredVx = (dx / dist) * 620;
+        const desiredVy = (dy / dist) * 620;
+        const steer = Math.min(1, dt * 7.5);
+        dart.vx += (desiredVx - dart.vx) * steer;
+        dart.vy += (desiredVy - dart.vy) * steer;
+      }
+
+      dart.x += dart.vx * dt;
+      dart.y += dart.vy * dt;
+      dart.trail.push({ x: dart.x, y: dart.y });
+      if (dart.trail.length > 10) dart.trail.shift();
+      activeDarts.push(dart);
+    }
+    this.homingDarts = activeDarts;
+
+    // 2. Spinning Pencil Lasers (!orbit)
+    if (this.orbitLaser) {
+      const ol = this.orbitLaser;
+      ol.timer -= dt;
+      ol.angle += dt * 3.1; // brisk sweeping rotation
+      for (const [id, cd] of ol.tickCooldowns.entries()) {
+        if (cd - dt <= 0) ol.tickCooldowns.delete(id);
+        else ol.tickCooldowns.set(id, cd - dt);
+      }
+
+      const beamLen = Math.min(this.width, this.height) * 0.48;
+      for (const beamAngle of [ol.angle, ol.angle + Math.PI]) {
+        const dirX = Math.cos(beamAngle);
+        const dirY = Math.sin(beamAngle);
+        for (const en of [...this.enemies]) {
+          if (ol.tickCooldowns.has(en.id)) continue;
+          const ex = en.x - cx;
+          const ey = en.y - cy;
+          const proj = ex * dirX + ey * dirY;
+          if (proj > PLAYER_RADIUS && proj <= beamLen) {
+            const perp = Math.abs(ex * -dirY + ey * dirX);
+            if (perp <= en.radius + 14) {
+              ol.tickCooldowns.set(en.id, 0.45);
+              en.knockVx += (ex / (Math.hypot(ex, ey) || 1)) * 120;
+              en.knockVy += (ey / (Math.hypot(ex, ey) || 1)) * 120;
+              this.spawnParticles(en.x, en.y, PALETTE.crimson, 6);
+              this.sound.playKeyHit(14);
+              this.damageEnemyLetters(en, 2);
+            }
+          }
+        }
+      }
+
+      if (ol.timer <= 0) {
+        this.orbitLaser = null;
+      }
+    }
+
+    // 3. Origami Hunter Drones (!drone)
+    const activeDrones: HunterDrone[] = [];
+    for (const dr of this.hunterDrones) {
+      dr.life -= dt;
+      if (dr.life <= 0) {
+        this.spawnParticles(dr.x, dr.y, PALETTE.inkMuted, 10);
+        continue;
+      }
+
+      dr.fireCooldown = Math.max(0, dr.fireCooldown - dt);
+      let target = dr.targetId !== null ? this.enemies.find((e) => e.id === dr.targetId) : undefined;
+      if (!target && this.enemies.length > 0) {
+        let bestD = Infinity;
+        for (const en of this.enemies) {
+          const d = Math.hypot(en.x - dr.x, en.y - dr.y);
+          if (d < bestD) {
+            bestD = d;
+            target = en;
+          }
+        }
+        dr.targetId = target ? target.id : null;
+      }
+
+      if (target) {
+        const dx = target.x - dr.x;
+        const dy = target.y - dr.y;
+        const dist = Math.hypot(dx, dy) || 1;
+        // Orbit around target at ~85px distance
+        const desiredSpeed = dist > 95 ? 290 : 120;
+        const tx = dist > 95 ? dx / dist : -dy / dist;
+        const ty = dist > 95 ? dy / dist : dx / dist;
+        dr.vx += (tx * desiredSpeed - dr.vx) * Math.min(1, dt * 5);
+        dr.vy += (ty * desiredSpeed - dr.vy) * Math.min(1, dt * 5);
+
+        if (dist < 165 && dr.fireCooldown <= 0) {
+          dr.fireCooldown = 0.52;
+          this.beams.push({
+            x1: dr.x,
+            y1: dr.y,
+            x2: target.x,
+            y2: target.y,
+            life: 0.16,
+            maxLife: 0.16,
+            color: PALETTE.crimson,
+          });
+          this.sound.playKeyHit(11);
+          this.damageEnemyLetters(target, 2);
+        }
+      } else {
+        // Patrol gracefully around center glyph
+        const orbitA = this.pulseTime * 1.8 + activeDrones.length * Math.PI;
+        const gx = cx + Math.cos(orbitA) * 95;
+        const gy = cy + Math.sin(orbitA) * 95;
+        dr.vx += ((gx - dr.x) * 3 - dr.vx) * Math.min(1, dt * 4);
+        dr.vy += ((gy - dr.y) * 3 - dr.vy) * Math.min(1, dt * 4);
+      }
+
+      dr.x += dr.vx * dt;
+      dr.y += dr.vy * dt;
+      dr.angle = Math.atan2(dr.vy, dr.vx);
+      activeDrones.push(dr);
+    }
+    this.hunterDrones = activeDrones;
   }
 
   private handlePlayerHit(enemy: Enemy): void {
@@ -1884,7 +2180,7 @@ export class TypingGlyphGame {
       ctx.restore();
     }
 
-    // 7. Ruler Beams (!lance / Chain Sketch / Auto-Compass)
+    // 7. Ruler Beams (!lance / Chain Sketch / Auto-Compass) + Active Weapon Entities
     for (const bm of this.beams) {
       const alpha = Math.max(0, bm.life / bm.maxLife);
       ctx.save();
@@ -1895,6 +2191,85 @@ export class TypingGlyphGame {
       ctx.beginPath();
       ctx.moveTo(bm.x1, bm.y1);
       ctx.lineTo(bm.x2, bm.y2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // Dual Spinning Pencil Lasers (!orbit)
+    if (this.orbitLaser) {
+      const ol = this.orbitLaser;
+      const beamLen = Math.min(this.width, this.height) * 0.48;
+      const fade = Math.min(1, ol.timer * 2);
+      ctx.save();
+      ctx.globalAlpha = fade;
+      for (const a of [ol.angle, ol.angle + Math.PI]) {
+        const x2 = cx + Math.cos(a) * beamLen;
+        const y2 = cy + Math.sin(a) * beamLen;
+        // Soft crimson outer wash
+        ctx.strokeStyle = 'rgba(184, 58, 58, 0.28)';
+        ctx.lineWidth = 9;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(x2, y2);
+        ctx.stroke();
+        // Razor sharp crimson core
+        ctx.strokeStyle = PALETTE.crimson;
+        ctx.lineWidth = 2.4;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(x2, y2);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    // Homing Calligraphy Ink Darts (!swarm)
+    for (const dart of this.homingDarts) {
+      if (dart.trail.length > 1) {
+        ctx.save();
+        ctx.strokeStyle = PALETTE.crimson;
+        ctx.lineWidth = 2.4;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(dart.trail[0].x, dart.trail[0].y);
+        for (let i = 1; i < dart.trail.length; i++) {
+          ctx.lineTo(dart.trail[i].x, dart.trail[i].y);
+        }
+        ctx.stroke();
+        // Dart tip
+        ctx.fillStyle = PALETTE.ink;
+        ctx.beginPath();
+        ctx.arc(dart.x, dart.y, 3.2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    // Origami Hunter Drones (!drone)
+    for (const dr of this.hunterDrones) {
+      const fade = Math.min(1, dr.life * 1.5);
+      ctx.save();
+      ctx.globalAlpha = fade;
+      ctx.translate(dr.x, dr.y);
+      ctx.rotate(dr.angle);
+      ctx.fillStyle = PALETTE.paper;
+      ctx.strokeStyle = PALETTE.ink;
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(12, 0);
+      ctx.lineTo(-9, -7);
+      ctx.lineTo(-4, 0);
+      ctx.lineTo(-9, 7);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      // Crimson center crease
+      ctx.strokeStyle = PALETTE.crimson;
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(10, 0);
+      ctx.lineTo(-5, 0);
       ctx.stroke();
       ctx.restore();
     }
@@ -2255,7 +2630,7 @@ export class TypingGlyphGame {
       ctx.font = `${isLocked ? '600' : '400'} ${fontSize}px "DM Sans", "Inter", system-ui, sans-serif`;
     }
 
-    // Draw letter-by-letter so Boss 2's Erase Pulse can fade specific letters!
+    // Draw letter-by-letter: strictly RED (typed) and GREY (untyped) for instant readability
     let cursorX = wordX;
     ctx.textAlign = 'left';
     for (let i = 0; i < en.word.length; i++) {
@@ -2265,7 +2640,7 @@ export class TypingGlyphGame {
 
       if (isTyped) ctx.fillStyle = PALETTE.crimson;
       else if (isFaded) ctx.fillStyle = 'rgba(140, 137, 132, 0.2)';
-      else ctx.fillStyle = isLocked ? PALETTE.ink : PALETTE.inkMuted;
+      else ctx.fillStyle = PALETTE.inkMuted;
 
       ctx.fillText(ch, cursorX, wordY);
       cursorX += ctx.measureText(ch).width;
@@ -2377,11 +2752,11 @@ export class TypingGlyphGame {
     const untypedPart = b.passage.slice(b.typedIndex);
     const typedW = ctx.measureText(typedPart).width;
 
-    // Position the split right at cx!
+    // Position the split right at cx: strictly RED (typed) and GREY (untyped)
     const textStartX = cx - typedW + shakeX;
-    ctx.fillStyle = 'rgba(140, 137, 132, 0.52)';
+    ctx.fillStyle = PALETTE.crimson;
     ctx.fillText(typedPart, textStartX, tickerY);
-    ctx.fillStyle = this.bossLocked ? PALETTE.ink : '#4A4845';
+    ctx.fillStyle = PALETTE.inkMuted;
     ctx.fillText(untypedPart, cx + shakeX, tickerY);
     ctx.restore();
 
@@ -2443,11 +2818,11 @@ export class TypingGlyphGame {
     const timeStr = `${mins}:${secs.toString().padStart(2, '0')}`;
 
     ctx.save();
-    // Top-left Stage & Wave progress
+    // Top-left Stage & Difficulty
     ctx.textAlign = 'left';
     ctx.fillStyle = PALETTE.ink;
     ctx.font = '600 13px "DM Sans", "Inter", system-ui, sans-serif';
-    ctx.fillText(`Stage ${this.stage} / 3`, 20, 26);
+    ctx.fillText(`Stage ${this.stage} / 3  ·  ${this.getDifficulty().label}`, 20, 26);
 
     if (!this.boss) {
       const wavePct = Math.min(1, this.stageTimer / STAGE_WAVE_DURATION);
@@ -2542,7 +2917,7 @@ export class TypingGlyphGame {
     ctx.fillStyle = PALETTE.inkMuted;
     ctx.textAlign = 'center';
     ctx.fillText(
-      'Type words to shoot  ·  Backspace detarget  ·  ! + command for abilities  ·  Esc pause',
+      'Type words to shoot  ·  Space / Backspace detarget  ·  ! + command for abilities  ·  Esc pause',
       cx,
       this.height - 9
     );
@@ -2580,7 +2955,7 @@ export class TypingGlyphGame {
 
     ctx.fillStyle = PALETTE.inkMuted;
     ctx.font = '400 13px "DM Sans", "Inter", system-ui, sans-serif';
-    ctx.fillText('Type a card’s keyword to select it  ·  Backspace to cancel', cx, cy - 100);
+    ctx.fillText('Type a card’s keyword to select it  ·  Space / Backspace to cancel', cx, cy - 100);
 
     const rects = this.getDraftCardRects();
 
@@ -2634,7 +3009,7 @@ export class TypingGlyphGame {
         ctx.fillStyle = PALETTE.crimson;
         ctx.fillText(typed, kwX, kwY);
       }
-      ctx.fillStyle = isLocked ? PALETTE.ink : PALETTE.inkMuted;
+      ctx.fillStyle = PALETTE.inkMuted;
       ctx.fillText(rest, kwX + ctx.measureText(typed).width, kwY);
 
       ctx.restore();
@@ -2672,6 +3047,15 @@ export class TypingGlyphGame {
     ctx.restore();
   }
 
+  private getDifficultySliderRect(): { x: number; y: number; w: number } {
+    const w = Math.min(300, this.width - 100);
+    return {
+      x: this.width / 2 - w / 2,
+      y: this.height / 2 + 150,
+      w,
+    };
+  }
+
   private renderTitleOverlay(cx: number, cy: number): void {
     const ctx = this.ctx;
     ctx.save();
@@ -2685,7 +3069,7 @@ export class TypingGlyphGame {
     ctx.font = '400 14px "DM Sans", "Inter", system-ui, sans-serif';
     ctx.fillText('3-Stage Typing Roguelike  ·  Paper, Pencil & Geometry', cx, cy - 56);
 
-    const promptY = cy + 68;
+    const promptY = cy + 62;
     ctx.font = '400 13px "DM Sans", "Inter", system-ui, sans-serif';
     ctx.fillStyle = PALETTE.inkMuted;
     ctx.fillText('Type to begin (or press Enter):', cx, promptY);
@@ -2699,14 +3083,62 @@ export class TypingGlyphGame {
 
     ctx.textAlign = 'left';
     ctx.fillStyle = PALETTE.crimson;
-    ctx.fillText(typed, x0, promptY + 32);
+    ctx.fillText(typed, x0, promptY + 30);
+    ctx.fillStyle = PALETTE.inkMuted;
+    ctx.fillText(rest, x0 + ctx.measureText(typed).width, promptY + 30);
+
+    // Interactive Difficulty Slider
+    const slider = this.getDifficultySliderRect();
+    const diff = this.getDifficulty();
+    const count = DIFFICULTY_PRESETS.length;
+
+    ctx.textAlign = 'center';
+    ctx.font = '600 12px "DM Sans", "Inter", system-ui, sans-serif';
     ctx.fillStyle = PALETTE.ink;
-    ctx.fillText(rest, x0 + ctx.measureText(typed).width, promptY + 32);
+    ctx.fillText(`Difficulty: ${diff.label}`, cx, slider.y - 18);
+
+    // Track line
+    ctx.strokeStyle = PALETTE.inkFaint;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(slider.x, slider.y);
+    ctx.lineTo(slider.x + slider.w, slider.y);
+    ctx.stroke();
+
+    // Active track fill
+    const activeX = slider.x + (this.difficultyIndex / (count - 1)) * slider.w;
+    ctx.strokeStyle = PALETTE.crimson;
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(slider.x, slider.y);
+    ctx.lineTo(activeX, slider.y);
+    ctx.stroke();
+
+    // Stops & labels
+    for (let i = 0; i < count; i++) {
+      const sx = slider.x + (i / (count - 1)) * slider.w;
+      const isSelected = i === this.difficultyIndex;
+      ctx.fillStyle = isSelected ? PALETTE.crimson : PALETTE.paper;
+      ctx.strokeStyle = isSelected ? PALETTE.crimson : PALETTE.inkMuted;
+      ctx.lineWidth = isSelected ? 2 : 1.4;
+      ctx.beginPath();
+      ctx.arc(sx, slider.y, isSelected ? 6.5 : 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.font = `${isSelected ? '600' : '400'} 11px "DM Sans", "Inter", system-ui, sans-serif`;
+      ctx.fillStyle = isSelected ? PALETTE.crimson : PALETTE.inkMuted;
+      ctx.fillText(DIFFICULTY_PRESETS[i].label, sx, slider.y + 20);
+    }
+
+    ctx.font = '400 11px "DM Sans", "Inter", system-ui, sans-serif';
+    ctx.fillStyle = PALETTE.inkMuted;
+    ctx.fillText(`${diff.description}  (← / → or click)`, cx, slider.y + 40);
 
     ctx.textAlign = 'center';
     ctx.font = '400 12px "DM Sans", "Inter", system-ui, sans-serif';
     ctx.fillStyle = PALETTE.inkMuted;
-    ctx.fillText('A–Z Lock & Fire   ·   Backspace Detarget   ·   !pulse & Drafted Glyphs', cx, this.height - 34);
+    ctx.fillText('A–Z Lock & Fire   ·   Space / Backspace Detarget   ·   !pulse & Drafted Weapons', cx, this.height - 28);
     ctx.restore();
   }
 
@@ -2768,7 +3200,7 @@ export class TypingGlyphGame {
     ctx.textAlign = 'left';
     ctx.fillStyle = PALETTE.crimson;
     ctx.fillText(typed, x0, promptY + 32);
-    ctx.fillStyle = PALETTE.ink;
+    ctx.fillStyle = PALETTE.inkMuted;
     ctx.fillText(rest, x0 + ctx.measureText(typed).width, promptY + 32);
 
     ctx.restore();

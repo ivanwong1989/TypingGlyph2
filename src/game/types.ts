@@ -2,7 +2,55 @@ export type GameMode = 'title' | 'playing' | 'draft' | 'paused' | 'gameover' | '
 
 export type EnemyKind = 'dot' | 'ring' | 'arrow' | 'pentagon' | 'diamond';
 
-export type AbilityId = 'pulse' | 'still' | 'ward' | 'nova' | 'lance' | 'mend' | 'blot';
+export type AbilityId =
+  | 'pulse'
+  | 'still'
+  | 'ward'
+  | 'nova'
+  | 'lance'
+  | 'mend'
+  | 'blot'
+  | 'swarm'
+  | 'orbit'
+  | 'drone';
+
+export interface DifficultyPreset {
+  id: 'relaxed' | 'standard' | 'challenging' | 'master';
+  label: string;
+  speedMult: number;
+  spawnRateMult: number;
+  damageMult: number;
+  description: string;
+}
+
+export interface HomingDart {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  targetId: number | null;
+  life: number;
+  trail: Array<{ x: number; y: number }>;
+}
+
+export interface HunterDrone {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  angle: number;
+  life: number;
+  maxLife: number;
+  fireCooldown: number;
+  targetId: number | null;
+}
+
+export interface OrbitLaserState {
+  timer: number;
+  maxTimer: number;
+  angle: number;
+  tickCooldowns: Map<number, number>;
+}
 
 export interface Enemy {
   id: number;
