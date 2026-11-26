@@ -1,6 +1,7 @@
 import { SoundEngine } from '../audio/sound';
 import { ALL_ABILITIES, BOSS_CONFIGS, DIFFICULTY_PRESETS, UPGRADE_POOL } from '../data/content';
 import { MEDIUM_WORDS, SHORT_WORDS, pickWord } from '../data/words';
+import { MobileKeyboardUI } from '../ui/mobileKeyboard';
 import {
   AbilityDef,
   AbilityId,
@@ -48,6 +49,8 @@ export class TypingGlyphGame {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
   private sound = new SoundEngine();
+  private mobileKb = new MobileKeyboardUI();
+  private mobileOverride: boolean | null = null;
 
   private width = window.innerWidth;
   private height = window.innerHeight;
@@ -151,7 +154,7 @@ export class TypingGlyphGame {
 
     window.addEventListener('resize', this.handleResize);
     window.addEventListener('keydown', this.handleKeyDown);
-    this.canvas.addEventListener('click', this.handleCanvasClick);
+    this.canvas.addEventListener('pointerdown', this.handlePointerDown);
   }
 
   private defaultPassives(): PlayerPassives {
@@ -184,7 +187,24 @@ export class TypingGlyphGame {
     this.sound.music.stop();
     window.removeEventListener('resize', this.handleResize);
     window.removeEventListener('keydown', this.handleKeyDown);
-    this.canvas.removeEventListener('click', this.handleCanvasClick);
+    this.canvas.removeEventListener('pointerdown', this.handlePointerDown);
+  }
+
+  private isMobileMode(): boolean {
+    if (this.mobileOverride !== null) return this.mobileOverride;
+    const coarse = typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
+    return coarse || this.width < 768;
+  }
+
+  private getArenaBottomY(): number {
+    return this.isMobileMode() ? this.mobileKb.abilityBarTopY - 18 : this.height;
+  }
+
+  private getArenaCenterY(): number {
+    if (!this.isMobileMode()) return this.height / 2;
+    const topMargin = 52;
+    const bottom = this.getArenaBottomY();
+    return Math.max(130, topMargin + (bottom - topMargin) * 0.54);
   }
 
   private createPaperGrainPattern(): void {
@@ -223,6 +243,7 @@ export class TypingGlyphGame {
     this.canvas.style.width = `${this.width}px`;
     this.canvas.style.height = `${this.height}px`;
     this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    this.mobileKb.layout(this.width, this.height);
   }
 
   private loadDifficulty(): void {
@@ -252,38 +273,119 @@ export class TypingGlyphGame {
     return DIFFICULTY_PRESETS[this.difficultyIndex] ?? DIFFICULTY_PRESETS[1];
   }
 
-  private handleCanvasClick = (e: MouseEvent): void => {
-    // Top-right mute button
-    if (e.clientX > this.width - 130 && e.clientY < 48) {
+  private handlePointerDown = (e: PointerEvent): void => {
+    e.preventDefault();
+    const x = e.clientX;
+    const y = e.clientY;
+
+    // Top-right Audio toggle
+    if (x > this.width - 92 && y < 44) {
       this.sound.toggleMute();
       return;
     }
 
-    // Title screen difficulty slider click
+    // Top-right Mobile/Desktop preview toggle (to the left of Audio)
+    if (x > this.width - 196 && x <= this.width - 96 && y < 44) {
+      this.mobileOverride = !this.isMobileMode();
+      this.mobileKb.layout(this.width, this.height);
+      return;
+    }
+
+    // Mobile Pause button (top-right, second row)
+    if (this.isMobileMode() && (this.mode === 'playing' || this.mode === 'paused')) {
+      if (x > this.width - 88 && y >= 44 && y < 78) {
+        if (this.mode === 'paused') {
+          this.mode = 'playing';
+          this.sound.music.setMuffled(false);
+        } else {
+          this.mode = 'paused';
+          this.sound.music.setMuffled(true);
+        }
+        return;
+      }
+    }
+
+    // Title screen interactions (Difficulty Slider + Tap-to-Start)
     if (this.mode === 'title') {
+      this.sound.startMusic();
+      this.sound.music.setIntensity(0);
       const slider = this.getDifficultySliderRect();
       if (
-        e.clientX >= slider.x - 24 &&
-        e.clientX <= slider.x + slider.w + 24 &&
-        e.clientY >= slider.y - 22 &&
-        e.clientY <= slider.y + 34
+        x >= slider.x - 24 &&
+        x <= slider.x + slider.w + 24 &&
+        y >= slider.y - 24 &&
+        y <= slider.y + 38
       ) {
-        const t = Math.max(0, Math.min(1, (e.clientX - slider.x) / slider.w));
+        const t = Math.max(0, Math.min(1, (x - slider.x) / slider.w));
         const idx = Math.round(t * (DIFFICULTY_PRESETS.length - 1));
         this.setDifficultyIndex(idx);
         this.sound.playKeyHit(4 + idx * 3);
         return;
       }
+
+      const startBtn = this.getStartButtonRect();
+      if (x >= startBtn.x && x <= startBtn.x + startBtn.w && y >= startBtn.y && y <= startBtn.y + startBtn.h) {
+        this.sound.playAbilityCast();
+        this.startNewRun();
+        return;
+      }
+      return;
     }
 
-    // Allow clicking draft cards too (handy fallback alongside pure typing)
+    // Paused screen tap to resume
+    if (this.mode === 'paused') {
+      this.mode = 'playing';
+      this.sound.music.setMuffled(false);
+      return;
+    }
+
+    // Game Over / Victory tap-to-retry button
+    if (this.mode === 'gameover' || this.mode === 'victory') {
+      const btn = this.getRetryButtonRect();
+      if (x >= btn.x && x <= btn.x + btn.w && y >= btn.y && y <= btn.y + btn.h) {
+        this.sound.playAbilityCast();
+        this.startNewRun();
+      }
+      return;
+    }
+
+    // Draft screen: tap any card directly
     if (this.mode === 'draft' && this.draftCards.length > 0) {
       const layout = this.getDraftCardRects();
       for (let i = 0; i < layout.length; i++) {
         const r = layout[i];
-        if (e.clientX >= r.x && e.clientX <= r.x + r.w && e.clientY >= r.y && e.clientY <= r.y + r.h) {
+        if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
           this.applyUpgradeCard(this.draftCards[i]);
           return;
+        }
+      }
+      return;
+    }
+
+    // Mobile Playing: Touch-Tap Ability Bar & Custom QWERTY Keyboard (multi-touch!)
+    if (this.mode === 'playing' && this.isMobileMode()) {
+      const abIdx = this.mobileKb.hitTestAbility(x, y);
+      if (abIdx !== null) {
+        const equipped = this.getEquippedAbilityDefs();
+        const ab = equipped[abIdx];
+        if (ab) this.castAbility(ab);
+        return;
+      }
+
+      const tappedKey = this.mobileKb.hitTestKey(x, y);
+      if (tappedKey !== null) {
+        if (tappedKey === 'UNLOCK') {
+          if (this.lockedEnemyId !== null) {
+            const locked = this.enemies.find((en) => en.id === this.lockedEnemyId);
+            if (locked) locked.typedCount = 0;
+            this.lockedEnemyId = null;
+            this.sound.playDetarget();
+          } else if (this.bossLocked) {
+            this.bossLocked = false;
+            this.sound.playDetarget();
+          }
+        } else {
+          this.handleCombatTyping(tappedKey);
         }
       }
     }
@@ -697,7 +799,7 @@ export class TypingGlyphGame {
     this.glyphKick = 1.0;
 
     const cx = this.width / 2;
-    const cy = this.height / 2;
+    const cy = this.getArenaCenterY();
 
     switch (ability.id) {
       case 'pulse': {
@@ -948,7 +1050,7 @@ export class TypingGlyphGame {
 
     // 3. Unlocked: find closest matching enemy
     const cx = this.width / 2;
-    const cy = this.height / 2;
+    const cy = this.getArenaCenterY();
     let bestEnemy: Enemy | null = null;
     let bestDist = Infinity;
 
@@ -1035,7 +1137,7 @@ export class TypingGlyphGame {
     this.boss.hitFlash = 0.1;
 
     const cx = this.width / 2;
-    const cy = this.height / 2;
+    const cy = this.getArenaCenterY();
     const bossY = 98;
 
     this.projectiles.push({
@@ -1080,7 +1182,7 @@ export class TypingGlyphGame {
     this.glyphKick = 0.55;
 
     const cx = this.width / 2;
-    const cy = this.height / 2;
+    const cy = this.getArenaCenterY();
     const isWordComplete = enemy.typedCount >= enemy.word.length;
 
     // Per-letter graphite dart
@@ -1232,7 +1334,7 @@ export class TypingGlyphGame {
         if (closest) {
           this.beams.push({
             x1: this.width / 2,
-            y1: this.height / 2,
+            y1: this.getArenaCenterY(),
             x2: closest.x,
             y2: closest.y,
             life: 0.22,
@@ -1274,7 +1376,8 @@ export class TypingGlyphGame {
       this.spawnParticles(enemy.x, enemy.y - enemy.radius - 16, PALETTE.smudge, 5);
     }
 
-    this.smudge = Math.min(100, this.smudge + SMUDGE_PER_TYPO * this.passives.smudgeGainMult);
+    const smudgeBase = this.isMobileMode() ? 20 : SMUDGE_PER_TYPO;
+    this.smudge = Math.min(100, this.smudge + smudgeBase * this.passives.smudgeGainMult);
     this.smudgeDryWait = SMUDGE_DRY_DELAY;
 
     if (this.smudge >= 100) {
@@ -1357,7 +1460,8 @@ export class TypingGlyphGame {
     b.attackTimer -= dt;
     if (b.attackTimer <= 0) {
       const cx = this.width / 2;
-      const cy = this.height / 2;
+      const cy = this.getArenaCenterY();
+      const arenaHalfH = Math.max(110, (this.getArenaBottomY() - 56) / 2);
 
       if (b.id === 'compass') {
         // Synchronized ring of 4 Dots
@@ -1365,7 +1469,7 @@ export class TypingGlyphGame {
           x: cx,
           y: cy,
           radius: 40,
-          maxRadius: Math.min(cx, cy) * 0.9,
+          maxRadius: Math.min(cx, arenaHalfH) * 0.9,
           life: 0.6,
           maxLife: 0.6,
           color: PALETTE.inkMuted,
@@ -1373,7 +1477,7 @@ export class TypingGlyphGame {
           dashed: true,
         });
         const baseA = Math.random() * Math.PI * 2;
-        const r = Math.min(cx, cy) - 30;
+        const r = Math.min(cx - 26, arenaHalfH - 12);
         for (let i = 0; i < 4; i++) {
           const a = baseA + (i * Math.PI) / 2;
           this.spawnDotAt(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
@@ -1469,7 +1573,7 @@ export class TypingGlyphGame {
 
   private findClosestEnemy(): Enemy | null {
     const cx = this.width / 2;
-    const cy = this.height / 2;
+    const cy = this.getArenaCenterY();
     let best: Enemy | null = null;
     let bestDist = Infinity;
     for (const en of this.enemies) {
@@ -1489,15 +1593,19 @@ export class TypingGlyphGame {
 
   private pickFreshWord(kind: EnemyKind): string {
     const used = new Set<string>(this.enemies.map((e) => e.word[0]));
-    const pool = kind === 'dot' || kind === 'arrow' ? SHORT_WORDS : MEDIUM_WORDS;
+    // Mobile ergonomic tuning: favor shorter 3-4 letter words for two-thumb comfort
+    const useShort =
+      kind === 'dot' || kind === 'arrow' || (this.isMobileMode() && Math.random() < 0.78);
+    const pool = useShort ? SHORT_WORDS : MEDIUM_WORDS;
     return pickWord(pool, used);
   }
 
   private spawnDotAt(x: number, y: number): void {
     const cx = this.width / 2;
-    const cy = this.height / 2;
+    const cy = this.getArenaCenterY();
     const diff = this.getDifficulty();
-    const speedScale = (1 + (this.stage - 1) * 0.14) * diff.speedMult;
+    const mobileSpeedMult = this.isMobileMode() ? 0.72 : 1;
+    const speedScale = (1 + (this.stage - 1) * 0.14) * diff.speedMult * mobileSpeedMult;
     this.enemies.push({
       id: this.nextEnemyId++,
       kind: 'dot',
@@ -1524,7 +1632,8 @@ export class TypingGlyphGame {
 
   private spawnEnemy(forcedKind?: EnemyKind): void {
     const cx = this.width / 2;
-    const cy = this.height / 2;
+    const cy = this.getArenaCenterY();
+    const arenaBottom = this.getArenaBottomY();
 
     let kind: EnemyKind = forcedKind ?? 'dot';
     if (!forcedKind) {
@@ -1549,19 +1658,23 @@ export class TypingGlyphGame {
     }
 
     const angle = Math.random() * Math.PI * 2;
-    const halfW = cx - 44;
-    const halfH = cy - 70;
+    const halfW = cx - 34;
+    const halfHTop = Math.max(80, cy - 64);
+    const halfHBot = Math.max(80, arenaBottom - cy - 16);
     const cos = Math.cos(angle);
     const sin = Math.sin(angle);
     const scaleX = Math.abs(cos) > 0.001 ? halfW / Math.abs(cos) : 9999;
-    const scaleY = Math.abs(sin) > 0.001 ? halfH / Math.abs(sin) : 9999;
-    const edgeDist = Math.min(scaleX, scaleY) + 34;
+    const targetHalfH = sin >= 0 ? halfHBot : halfHTop;
+    const scaleY = Math.abs(sin) > 0.001 ? targetHalfH / Math.abs(sin) : 9999;
+    const edgeDist = Math.min(scaleX, scaleY) + (this.isMobileMode() ? 14 : 34);
 
-    const x = cx + cos * edgeDist;
-    const y = cy + sin * edgeDist;
+    const x = Math.max(24, Math.min(this.width - 24, cx + cos * edgeDist));
+    const y = Math.max(54, Math.min(arenaBottom - 10, cy + sin * edgeDist));
 
     const diff = this.getDifficulty();
-    const speedScale = (1 + (this.stage - 1) * 0.14 + Math.min(this.stageTimer / 200, 0.2)) * diff.speedMult;
+    const mobileSpeedMult = this.isMobileMode() ? 0.72 : 1;
+    const speedScale =
+      (1 + (this.stage - 1) * 0.14 + Math.min(this.stageTimer / 200, 0.2)) * diff.speedMult * mobileSpeedMult;
     const word = this.pickFreshWord(kind);
 
     const configs: Record<EnemyKind, { radius: number; speed: number; damage: number; armor: number }> = {
@@ -1667,6 +1780,7 @@ export class TypingGlyphGame {
 
   private update(dt: number): void {
     this.pulseTime += dt;
+    this.mobileKb.update(dt);
     if (this.draftShakeTimer > 0) this.draftShakeTimer = Math.max(0, this.draftShakeTimer - dt);
 
     if (this.mode !== 'playing') return;
@@ -1694,15 +1808,17 @@ export class TypingGlyphGame {
       if (this.stageTimer >= STAGE_WAVE_DURATION) {
         this.spawnStageBoss();
       } else {
-        // Wave spawner (scaled by difficulty slider)
+        // Wave spawner (scaled by difficulty slider & mobile ergonomics)
         this.spawnTimer -= dt;
         if (this.spawnTimer <= 0) {
           const diff = this.getDifficulty();
-          const maxActive = Math.min(18, Math.round((5 + this.stage * 2.5 + Math.floor(this.stageTimer / 22)) * diff.spawnRateMult));
+          const mobRate = this.isMobileMode() ? 0.82 : 1;
+          const effRate = diff.spawnRateMult * mobRate;
+          const maxActive = Math.min(18, Math.round((5 + this.stage * 2.5 + Math.floor(this.stageTimer / 22)) * effRate));
           if (this.enemies.length < Math.max(3, maxActive)) {
             this.spawnEnemy();
           }
-          const baseInterval = Math.max(0.75, 2.25 - (this.stage - 1) * 0.32 - this.stageTimer * 0.007) / diff.spawnRateMult;
+          const baseInterval = Math.max(0.75, 2.25 - (this.stage - 1) * 0.32 - this.stageTimer * 0.007) / effRate;
           this.spawnTimer = baseInterval * (0.85 + Math.random() * 0.3);
         }
       }
@@ -1712,7 +1828,7 @@ export class TypingGlyphGame {
 
     // Update enemies
     const cx = this.width / 2;
-    const cy = this.height / 2;
+    const cy = this.getArenaCenterY();
     const slowMult = this.slowTimer > 0 ? 0.35 : 1;
 
     const remaining: Enemy[] = [];
@@ -1965,7 +2081,7 @@ export class TypingGlyphGame {
 
   private handlePlayerHit(enemy: Enemy): void {
     const cx = this.width / 2;
-    const cy = this.height / 2;
+    const cy = this.getArenaCenterY();
 
     if (this.wardHits > 0) {
       this.wardHits -= 1;
@@ -2028,9 +2144,9 @@ export class TypingGlyphGame {
     ctx.fillStyle = this.paperPattern ?? PALETTE.paper;
     ctx.fillRect(-20, -20, this.width + 40, this.height + 40);
 
-    // 2. Subtle architectural drafting circles in background (calm geometric polish)
+    // 2. Subtle architectural drafting circles in background (centered on arena)
     const cx = this.width / 2;
-    const cy = this.height / 2;
+    const cy = this.getArenaCenterY();
     ctx.save();
     ctx.strokeStyle = 'rgba(140, 137, 132, 0.08)';
     ctx.lineWidth = 1;
@@ -2395,18 +2511,29 @@ export class TypingGlyphGame {
       ctx.restore();
     }
 
-    // 17. Top & Bottom Minimal HUD
+    // 17. Top & Bottom Minimal HUD (or Custom Mobile Keyboard + Ability Bar)
     this.renderTopHud();
-    this.renderBottomHud();
+    if (this.isMobileMode()) {
+      this.mobileKb.render(
+        ctx,
+        this.width,
+        this.height,
+        this.getEquippedAbilityDefs(),
+        this.charge,
+        true
+      );
+    } else {
+      this.renderBottomHud();
+    }
     this.renderMuteButton();
 
     // 18. Modal Overlays (Draft / Pause / Game Over / Victory)
     if (this.mode === 'draft') {
-      this.renderDraftOverlay(cx, cy);
+      this.renderDraftOverlay(cx, this.height / 2);
     } else if (this.mode === 'paused') {
-      this.renderPauseOverlay(cx, cy);
+      this.renderPauseOverlay(cx, this.height / 2);
     } else if (this.mode === 'gameover' || this.mode === 'victory') {
-      this.renderEndOverlay(cx, cy, this.mode === 'victory');
+      this.renderEndOverlay(cx, this.height / 2, this.mode === 'victory');
     }
 
     ctx.restore();
@@ -2609,7 +2736,8 @@ export class TypingGlyphGame {
     ctx.textBaseline = 'middle';
 
     const fullW = ctx.measureText(en.word).width;
-    const wordX = en.x + shakeX - fullW / 2;
+    const rawWordX = en.x + shakeX - fullW / 2;
+    const wordX = Math.max(14, Math.min(this.width - fullW - 14, rawWordX));
     const wordY = en.y - en.radius - 18;
 
     if (en.armor > 1) {
@@ -2927,6 +3055,21 @@ export class TypingGlyphGame {
 
   private getDraftCardRects(): Array<{ x: number; y: number; w: number; h: number }> {
     const count = this.draftCards.length;
+    if (this.isMobileMode()) {
+      const cardW = Math.min(360, this.width - 32);
+      const cardH = Math.min(118, (this.height - 210) / Math.max(1, count));
+      const gap = 12;
+      const totalH = count * cardH + (count - 1) * gap;
+      const startY = Math.max(125, this.height / 2 - totalH / 2 + 18);
+      const x = this.width / 2 - cardW / 2;
+      return this.draftCards.map((_, i) => ({
+        x,
+        y: startY + i * (cardH + gap),
+        w: cardW,
+        h: cardH,
+      }));
+    }
+
     const cardW = Math.min(220, (this.width - 80) / Math.max(1, count));
     const cardH = 195;
     const gap = 18;
@@ -2944,18 +3087,24 @@ export class TypingGlyphGame {
 
   private renderDraftOverlay(cx: number, cy: number): void {
     const ctx = this.ctx;
+    const mobile = this.isMobileMode();
     ctx.save();
-    ctx.fillStyle = 'rgba(242, 239, 233, 0.88)';
+    ctx.fillStyle = 'rgba(242, 239, 233, 0.92)';
     ctx.fillRect(0, 0, this.width, this.height);
 
+    const headerY = mobile ? 72 : cy - 126;
     ctx.textAlign = 'center';
     ctx.fillStyle = PALETTE.ink;
-    ctx.font = '600 24px "DM Sans", "Inter", system-ui, sans-serif';
-    ctx.fillText(this.draftTitle, cx, cy - 126);
+    ctx.font = `600 ${mobile ? 21 : 24}px "DM Sans", "Inter", system-ui, sans-serif`;
+    ctx.fillText(this.draftTitle, cx, headerY);
 
     ctx.fillStyle = PALETTE.inkMuted;
     ctx.font = '400 13px "DM Sans", "Inter", system-ui, sans-serif';
-    ctx.fillText('Type a card’s keyword to select it  ·  Space / Backspace to cancel', cx, cy - 100);
+    ctx.fillText(
+      mobile ? 'Tap an upgrade card to select it' : 'Type a card’s keyword to select it  ·  Space / Backspace to cancel',
+      cx,
+      headerY + 24
+    );
 
     const rects = this.getDraftCardRects();
 
@@ -2974,48 +3123,81 @@ export class TypingGlyphGame {
       ctx.lineWidth = isLocked ? 2 : 1.2;
       ctx.strokeRect(r.x, r.y, r.w, r.h);
 
-      // Category tag
-      ctx.font = '600 10px "DM Sans", "Inter", system-ui, sans-serif';
-      ctx.fillStyle =
-        card.kind === 'ability' ? PALETTE.crimson : card.kind === 'survival' ? PALETTE.gold : PALETTE.inkMuted;
-      ctx.textAlign = 'center';
-      ctx.fillText(card.kind.toUpperCase(), r.x + r.w / 2, r.y + 24);
+      if (mobile) {
+        // Compact horizontal mobile card layout
+        ctx.textAlign = 'left';
+        ctx.font = '600 10px "DM Sans", "Inter", system-ui, sans-serif';
+        ctx.fillStyle =
+          card.kind === 'ability' ? PALETTE.crimson : card.kind === 'survival' ? PALETTE.gold : PALETTE.inkMuted;
+        ctx.fillText(card.kind.toUpperCase(), r.x + 14, r.y + 20);
 
-      // Title
-      ctx.font = '600 18px "DM Sans", "Inter", system-ui, sans-serif';
-      ctx.fillStyle = PALETTE.ink;
-      ctx.fillText(card.title, r.x + r.w / 2, r.y + 52);
+        ctx.font = '600 17px "DM Sans", "Inter", system-ui, sans-serif';
+        ctx.fillStyle = PALETTE.ink;
+        ctx.fillText(card.title, r.x + 14, r.y + 42);
 
-      // Wrapped description
-      ctx.font = '400 12px "DM Sans", "Inter", system-ui, sans-serif';
-      ctx.fillStyle = PALETTE.inkMuted;
-      this.drawWrappedText(card.description, r.x + r.w / 2, r.y + 82, r.w - 28, 17);
+        ctx.font = '400 12px "DM Sans", "Inter", system-ui, sans-serif';
+        ctx.fillStyle = PALETTE.inkMuted;
+        this.drawWrappedTextLeft(card.description, r.x + 14, r.y + 64, r.w - 28, 16);
+      } else {
+        // Desktop vertical card with typing keyword
+        ctx.font = '600 10px "DM Sans", "Inter", system-ui, sans-serif';
+        ctx.fillStyle =
+          card.kind === 'ability' ? PALETTE.crimson : card.kind === 'survival' ? PALETTE.gold : PALETTE.inkMuted;
+        ctx.textAlign = 'center';
+        ctx.fillText(card.kind.toUpperCase(), r.x + r.w / 2, r.y + 24);
 
-      // Typing keyword box at bottom of card
-      const kwY = r.y + r.h - 32;
-      ctx.font = '600 16px "DM Sans", "Inter", system-ui, sans-serif';
-      const kwW = ctx.measureText(card.keyword).width;
-      const kwX = r.x + r.w / 2 - kwW / 2;
+        ctx.font = '600 18px "DM Sans", "Inter", system-ui, sans-serif';
+        ctx.fillStyle = PALETTE.ink;
+        ctx.fillText(card.title, r.x + r.w / 2, r.y + 52);
 
-      ctx.fillStyle = isLocked ? 'rgba(184, 58, 58, 0.1)' : 'rgba(43, 42, 41, 0.05)';
-      ctx.fillRect(r.x + 18, kwY - 14, r.w - 36, 28);
+        ctx.font = '400 12px "DM Sans", "Inter", system-ui, sans-serif';
+        ctx.fillStyle = PALETTE.inkMuted;
+        this.drawWrappedText(card.description, r.x + r.w / 2, r.y + 82, r.w - 28, 17);
 
-      const typed = isLocked ? card.keyword.slice(0, this.draftTypedCount) : '';
-      const rest = isLocked ? card.keyword.slice(this.draftTypedCount) : card.keyword;
+        const kwY = r.y + r.h - 32;
+        ctx.font = '600 16px "DM Sans", "Inter", system-ui, sans-serif';
+        const kwW = ctx.measureText(card.keyword).width;
+        const kwX = r.x + r.w / 2 - kwW / 2;
 
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'middle';
-      if (typed) {
-        ctx.fillStyle = PALETTE.crimson;
-        ctx.fillText(typed, kwX, kwY);
+        ctx.fillStyle = isLocked ? 'rgba(184, 58, 58, 0.1)' : 'rgba(43, 42, 41, 0.05)';
+        ctx.fillRect(r.x + 18, kwY - 14, r.w - 36, 28);
+
+        const typed = isLocked ? card.keyword.slice(0, this.draftTypedCount) : '';
+        const rest = isLocked ? card.keyword.slice(this.draftTypedCount) : card.keyword;
+
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        if (typed) {
+          ctx.fillStyle = PALETTE.crimson;
+          ctx.fillText(typed, kwX, kwY);
+        }
+        ctx.fillStyle = PALETTE.inkMuted;
+        ctx.fillText(rest, kwX + ctx.measureText(typed).width, kwY);
       }
-      ctx.fillStyle = PALETTE.inkMuted;
-      ctx.fillText(rest, kwX + ctx.measureText(typed).width, kwY);
 
       ctx.restore();
     }
 
     ctx.restore();
+  }
+
+  private drawWrappedTextLeft(text: string, x: number, y: number, maxW: number, lineH: number): void {
+    const ctx = this.ctx;
+    const words = text.split(' ');
+    let line = '';
+    let currY = y;
+    ctx.textAlign = 'left';
+    for (const w of words) {
+      const test = line ? `${line} ${w}` : w;
+      if (ctx.measureText(test).width > maxW && line) {
+        ctx.fillText(line, x, currY);
+        line = w;
+        currY += lineH;
+      } else {
+        line = test;
+      }
+    }
+    if (line) ctx.fillText(line, x, currY);
   }
 
   private drawWrappedText(text: string, x: number, y: number, maxW: number, lineH: number): void {
@@ -3043,49 +3225,95 @@ export class TypingGlyphGame {
     ctx.font = '500 12px "DM Sans", "Inter", system-ui, sans-serif';
     ctx.fillStyle = PALETTE.inkMuted;
     ctx.textAlign = 'right';
-    ctx.fillText(this.sound.isMuted() ? 'Audio: Off' : 'Audio: On', this.width - 20, 26);
+    ctx.fillText(this.sound.isMuted() ? 'Audio: Off' : 'Audio: On', this.width - 16, 26);
+
+    ctx.fillText(this.isMobileMode() ? '[Mobile UI]' : '[Desktop UI]', this.width - 96, 26);
+
+    if (this.isMobileMode() && (this.mode === 'playing' || this.mode === 'paused')) {
+      ctx.fillStyle = PALETTE.ink;
+      ctx.font = '600 11px "DM Sans", "Inter", system-ui, sans-serif';
+      ctx.fillText(this.mode === 'paused' ? 'Resume' : 'Pause', this.width - 16, 56);
+    }
     ctx.restore();
   }
 
   private getDifficultySliderRect(): { x: number; y: number; w: number } {
-    const w = Math.min(300, this.width - 100);
+    const w = Math.min(290, this.width - 68);
+    const cy = this.isMobileMode() ? this.height * 0.42 : this.height / 2;
     return {
       x: this.width / 2 - w / 2,
-      y: this.height / 2 + 150,
+      y: cy + (this.isMobileMode() ? 165 : 150),
       w,
     };
   }
 
-  private renderTitleOverlay(cx: number, cy: number): void {
+  private getStartButtonRect(): { x: number; y: number; w: number; h: number } {
+    const w = 168;
+    const h = 42;
+    const cy = this.isMobileMode() ? this.height * 0.42 : this.height / 2;
+    return {
+      x: this.width / 2 - w / 2,
+      y: cy + 56,
+      w,
+      h,
+    };
+  }
+
+  private getRetryButtonRect(): { x: number; y: number; w: number; h: number } {
+    const w = 168;
+    const h = 42;
+    return {
+      x: this.width / 2 - w / 2,
+      y: this.height / 2 + 86,
+      w,
+      h,
+    };
+  }
+
+  private renderTitleOverlay(cx: number, _arenaCy: number): void {
     const ctx = this.ctx;
+    const mobile = this.isMobileMode();
+    const cy = mobile ? this.height * 0.42 : this.height / 2;
+
     ctx.save();
     ctx.textAlign = 'center';
 
     ctx.fillStyle = PALETTE.ink;
-    ctx.font = '600 36px "DM Sans", "Inter", system-ui, sans-serif';
+    ctx.font = `600 ${mobile ? 32 : 36}px "DM Sans", "Inter", system-ui, sans-serif`;
     ctx.fillText('TypingGlyph', cx, cy - 88);
 
     ctx.fillStyle = PALETTE.inkMuted;
-    ctx.font = '400 14px "DM Sans", "Inter", system-ui, sans-serif';
+    ctx.font = `400 ${mobile ? 13 : 14}px "DM Sans", "Inter", system-ui, sans-serif`;
     ctx.fillText('3-Stage Typing Roguelike  ·  Paper, Pencil & Geometry', cx, cy - 56);
 
-    const promptY = cy + 62;
-    ctx.font = '400 13px "DM Sans", "Inter", system-ui, sans-serif';
-    ctx.fillStyle = PALETTE.inkMuted;
-    ctx.fillText('Type to begin (or press Enter):', cx, promptY);
+    if (mobile) {
+      const btn = this.getStartButtonRect();
+      ctx.fillStyle = PALETTE.crimson;
+      ctx.fillRect(btn.x, btn.y, btn.w, btn.h);
+      ctx.fillStyle = '#F8F6F1';
+      ctx.font = '600 15px "DM Sans", "Inter", system-ui, sans-serif';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('TAP TO START', cx, btn.y + btn.h / 2);
+      ctx.textBaseline = 'alphabetic';
+    } else {
+      const promptY = cy + 62;
+      ctx.font = '400 13px "DM Sans", "Inter", system-ui, sans-serif';
+      ctx.fillStyle = PALETTE.inkMuted;
+      ctx.fillText('Type to begin (or press Enter):', cx, promptY);
 
-    const target = 'start';
-    ctx.font = '600 22px "DM Sans", "Inter", system-ui, sans-serif';
-    const fullW = ctx.measureText(target).width;
-    const x0 = cx - fullW / 2;
-    const typed = target.slice(0, this.titleBuffer.length);
-    const rest = target.slice(this.titleBuffer.length);
+      const target = 'start';
+      ctx.font = '600 22px "DM Sans", "Inter", system-ui, sans-serif';
+      const fullW = ctx.measureText(target).width;
+      const x0 = cx - fullW / 2;
+      const typed = target.slice(0, this.titleBuffer.length);
+      const rest = target.slice(this.titleBuffer.length);
 
-    ctx.textAlign = 'left';
-    ctx.fillStyle = PALETTE.crimson;
-    ctx.fillText(typed, x0, promptY + 30);
-    ctx.fillStyle = PALETTE.inkMuted;
-    ctx.fillText(rest, x0 + ctx.measureText(typed).width, promptY + 30);
+      ctx.textAlign = 'left';
+      ctx.fillStyle = PALETTE.crimson;
+      ctx.fillText(typed, x0, promptY + 30);
+      ctx.fillStyle = PALETTE.inkMuted;
+      ctx.fillText(rest, x0 + ctx.measureText(typed).width, promptY + 30);
+    }
 
     // Interactive Difficulty Slider
     const slider = this.getDifficultySliderRect();
@@ -3097,7 +3325,6 @@ export class TypingGlyphGame {
     ctx.fillStyle = PALETTE.ink;
     ctx.fillText(`Difficulty: ${diff.label}`, cx, slider.y - 18);
 
-    // Track line
     ctx.strokeStyle = PALETTE.inkFaint;
     ctx.lineWidth = 2.5;
     ctx.beginPath();
@@ -3105,7 +3332,6 @@ export class TypingGlyphGame {
     ctx.lineTo(slider.x + slider.w, slider.y);
     ctx.stroke();
 
-    // Active track fill
     const activeX = slider.x + (this.difficultyIndex / (count - 1)) * slider.w;
     ctx.strokeStyle = PALETTE.crimson;
     ctx.lineWidth = 2.5;
@@ -3114,7 +3340,6 @@ export class TypingGlyphGame {
     ctx.lineTo(activeX, slider.y);
     ctx.stroke();
 
-    // Stops & labels
     for (let i = 0; i < count; i++) {
       const sx = slider.x + (i / (count - 1)) * slider.w;
       const isSelected = i === this.difficultyIndex;
@@ -3133,19 +3358,29 @@ export class TypingGlyphGame {
 
     ctx.font = '400 11px "DM Sans", "Inter", system-ui, sans-serif';
     ctx.fillStyle = PALETTE.inkMuted;
-    ctx.fillText(`${diff.description}  (← / → or click)`, cx, slider.y + 40);
+    ctx.fillText(
+      mobile ? `${diff.description} (tap slider)` : `${diff.description}  (← / → or click)`,
+      cx,
+      slider.y + 40
+    );
 
     ctx.textAlign = 'center';
-    ctx.font = '400 12px "DM Sans", "Inter", system-ui, sans-serif';
+    ctx.font = '400 11px "DM Sans", "Inter", system-ui, sans-serif';
     ctx.fillStyle = PALETTE.inkMuted;
-    ctx.fillText('A–Z Lock & Fire   ·   Space / Backspace Detarget   ·   !pulse & Drafted Weapons', cx, this.height - 28);
+    ctx.fillText(
+      mobile
+        ? 'Built-in QWERTY keyboard  ·  Tap ability buttons  ·  Mobile pace tuned'
+        : 'A–Z Lock & Fire   ·   Space / Backspace Detarget   ·   !pulse & Drafted Weapons',
+      cx,
+      this.height - 24
+    );
     ctx.restore();
   }
 
   private renderPauseOverlay(cx: number, cy: number): void {
     const ctx = this.ctx;
     ctx.save();
-    ctx.fillStyle = 'rgba(242, 239, 233, 0.8)';
+    ctx.fillStyle = 'rgba(242, 239, 233, 0.84)';
     ctx.fillRect(0, 0, this.width, this.height);
 
     ctx.textAlign = 'center';
@@ -3155,14 +3390,15 @@ export class TypingGlyphGame {
 
     ctx.fillStyle = PALETTE.inkMuted;
     ctx.font = '400 14px "DM Sans", "Inter", system-ui, sans-serif';
-    ctx.fillText('Press Esc to resume', cx, cy + 20);
+    ctx.fillText(this.isMobileMode() ? 'Tap anywhere to resume' : 'Press Esc to resume', cx, cy + 20);
     ctx.restore();
   }
 
   private renderEndOverlay(cx: number, cy: number, isVictory: boolean): void {
     const ctx = this.ctx;
+    const mobile = this.isMobileMode();
     ctx.save();
-    ctx.fillStyle = 'rgba(242, 239, 233, 0.9)';
+    ctx.fillStyle = 'rgba(242, 239, 233, 0.92)';
     ctx.fillRect(0, 0, this.width, this.height);
 
     ctx.textAlign = 'center';
@@ -3185,23 +3421,34 @@ export class TypingGlyphGame {
       ctx.fillText(line, cx, cy - 42 + idx * 24);
     });
 
-    const promptY = cy + 80;
-    ctx.fillStyle = PALETTE.inkMuted;
-    ctx.font = '400 13px "DM Sans", "Inter", system-ui, sans-serif';
-    ctx.fillText('Type to play again (or press Enter):', cx, promptY);
+    if (mobile) {
+      const btn = this.getRetryButtonRect();
+      ctx.fillStyle = PALETTE.crimson;
+      ctx.fillRect(btn.x, btn.y, btn.w, btn.h);
+      ctx.fillStyle = '#F8F6F1';
+      ctx.font = '600 15px "DM Sans", "Inter", system-ui, sans-serif';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('PLAY AGAIN', cx, btn.y + btn.h / 2);
+      ctx.textBaseline = 'alphabetic';
+    } else {
+      const promptY = cy + 80;
+      ctx.fillStyle = PALETTE.inkMuted;
+      ctx.font = '400 13px "DM Sans", "Inter", system-ui, sans-serif';
+      ctx.fillText('Type to play again (or press Enter):', cx, promptY);
 
-    const target = 'retry';
-    ctx.font = '600 22px "DM Sans", "Inter", system-ui, sans-serif';
-    const fullW = ctx.measureText(target).width;
-    const x0 = cx - fullW / 2;
-    const typed = target.slice(0, this.retryBuffer.length);
-    const rest = target.slice(this.retryBuffer.length);
+      const target = 'retry';
+      ctx.font = '600 22px "DM Sans", "Inter", system-ui, sans-serif';
+      const fullW = ctx.measureText(target).width;
+      const x0 = cx - fullW / 2;
+      const typed = target.slice(0, this.retryBuffer.length);
+      const rest = target.slice(this.retryBuffer.length);
 
-    ctx.textAlign = 'left';
-    ctx.fillStyle = PALETTE.crimson;
-    ctx.fillText(typed, x0, promptY + 32);
-    ctx.fillStyle = PALETTE.inkMuted;
-    ctx.fillText(rest, x0 + ctx.measureText(typed).width, promptY + 32);
+      ctx.textAlign = 'left';
+      ctx.fillStyle = PALETTE.crimson;
+      ctx.fillText(typed, x0, promptY + 32);
+      ctx.fillStyle = PALETTE.inkMuted;
+      ctx.fillText(rest, x0 + ctx.measureText(typed).width, promptY + 32);
+    }
 
     ctx.restore();
   }
