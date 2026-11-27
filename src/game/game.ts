@@ -2,6 +2,7 @@ import { SoundEngine } from '../audio/sound';
 import { ALL_ABILITIES, BOSS_CONFIGS, DIFFICULTY_PRESETS, UPGRADE_POOL } from '../data/content';
 import { MEDIUM_WORDS, SHORT_WORDS, pickWord } from '../data/words';
 import { MobileKeyboardUI } from '../ui/mobileKeyboard';
+import { NativeKeyboardController } from '../ui/nativeKeyboard';
 import {
   AbilityDef,
   AbilityId,
@@ -50,10 +51,13 @@ export class TypingGlyphGame {
   private ctx: CanvasRenderingContext2D;
   private sound = new SoundEngine();
   private mobileKb = new MobileKeyboardUI();
+  private nativeKb: NativeKeyboardController;
   private mobileOverride: boolean | null = null;
+  private mobileKeyboardMode: 'builtin' | 'native' = 'builtin';
 
   private width = window.innerWidth;
   private height = window.innerHeight;
+  private visibleHeight = Math.round(window.visualViewport?.height ?? window.innerHeight);
   private dpr = Math.min(window.devicePixelRatio || 1, 2);
   private paperPattern: CanvasPattern | null = null;
 
@@ -148,11 +152,27 @@ export class TypingGlyphGame {
     if (!ctx) throw new Error('Could not initialize 2D canvas context');
     this.ctx = ctx;
 
+    this.nativeKb = new NativeKeyboardController({
+      onLetter: (letter) => {
+        if (this.isNativeKeyboardActive() && this.mode === 'playing') {
+          this.handleCombatTyping(letter);
+        }
+      },
+      onUnlock: () => {
+        if (this.isNativeKeyboardActive() && this.mode === 'playing') {
+          this.unlockCurrentTarget();
+        }
+      },
+    });
+
     this.createPaperGrainPattern();
     this.loadDifficulty();
+    this.loadMobileKeyboardMode();
     this.resize();
 
     window.addEventListener('resize', this.handleResize);
+    window.visualViewport?.addEventListener('resize', this.handleVisualViewport);
+    window.visualViewport?.addEventListener('scroll', this.handleVisualViewport);
     window.addEventListener('keydown', this.handleKeyDown);
     this.canvas.addEventListener('pointerdown', this.handlePointerDown);
   }
@@ -185,7 +205,10 @@ export class TypingGlyphGame {
   public destroy(): void {
     cancelAnimationFrame(this.rafId);
     this.sound.music.stop();
+    this.nativeKb.destroy();
     window.removeEventListener('resize', this.handleResize);
+    window.visualViewport?.removeEventListener('resize', this.handleVisualViewport);
+    window.visualViewport?.removeEventListener('scroll', this.handleVisualViewport);
     window.removeEventListener('keydown', this.handleKeyDown);
     this.canvas.removeEventListener('pointerdown', this.handlePointerDown);
   }
@@ -194,6 +217,28 @@ export class TypingGlyphGame {
     if (this.mobileOverride !== null) return this.mobileOverride;
     const coarse = typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
     return coarse || this.width < 768;
+  }
+
+  private isNativeKeyboardActive(): boolean {
+    return this.isMobileMode() && this.mobileKeyboardMode === 'native';
+  }
+
+  private layoutMobileKb(): void {
+    const nativeActive = this.isNativeKeyboardActive();
+    const effectiveH = nativeActive ? this.visibleHeight : this.height;
+    this.mobileKb.layout(this.width, effectiveH, nativeActive);
+  }
+
+  private unlockCurrentTarget(): void {
+    if (this.lockedEnemyId !== null) {
+      const locked = this.enemies.find((en) => en.id === this.lockedEnemyId);
+      if (locked) locked.typedCount = 0;
+      this.lockedEnemyId = null;
+      this.sound.playDetarget();
+    } else if (this.bossLocked) {
+      this.bossLocked = false;
+      this.sound.playDetarget();
+    }
   }
 
   private getArenaBottomY(): number {
@@ -234,16 +279,48 @@ export class TypingGlyphGame {
     this.resize();
   };
 
+  private handleVisualViewport = (): void => {
+    this.visibleHeight = Math.round(window.visualViewport?.height ?? window.innerHeight);
+    if (this.isNativeKeyboardActive()) {
+      if (window.scrollY !== 0 || window.scrollX !== 0 || (window.visualViewport?.offsetTop ?? 0) > 0) {
+        window.scrollTo(0, 0);
+      }
+    }
+    this.layoutMobileKb();
+  };
+
   private resize(): void {
     this.width = window.innerWidth;
     this.height = window.innerHeight;
+    this.visibleHeight = Math.round(window.visualViewport?.height ?? this.height);
     this.dpr = Math.min(window.devicePixelRatio || 1, 2);
     this.canvas.width = Math.floor(this.width * this.dpr);
     this.canvas.height = Math.floor(this.height * this.dpr);
     this.canvas.style.width = `${this.width}px`;
     this.canvas.style.height = `${this.height}px`;
     this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-    this.mobileKb.layout(this.width, this.height);
+    this.layoutMobileKb();
+  }
+
+  private loadMobileKeyboardMode(): void {
+    try {
+      const saved = window.localStorage.getItem('typingglyph_mobile_kb');
+      if (saved === 'builtin' || saved === 'native') {
+        this.mobileKeyboardMode = saved;
+      }
+    } catch {
+      // ignore storage errors
+    }
+  }
+
+  private setMobileKeyboardMode(mode: 'builtin' | 'native'): void {
+    this.mobileKeyboardMode = mode;
+    try {
+      window.localStorage.setItem('typingglyph_mobile_kb', mode);
+    } catch {
+      // ignore
+    }
+    this.layoutMobileKb();
   }
 
   private loadDifficulty(): void {
@@ -287,25 +364,46 @@ export class TypingGlyphGame {
     // Top-right Mobile/Desktop preview toggle (to the left of Audio)
     if (x > this.width - 196 && x <= this.width - 96 && y < 44) {
       this.mobileOverride = !this.isMobileMode();
-      this.mobileKb.layout(this.width, this.height);
+      this.layoutMobileKb();
+      if (!this.isNativeKeyboardActive()) {
+        this.nativeKb.blur();
+      } else if (this.mode === 'playing') {
+        this.nativeKb.focus();
+      }
       return;
     }
 
-    // Mobile Pause button (top-right, second row)
+    // Mobile second row: [KB: Built-in]/[KB: Native] toggle + Pause/Resume button
     if (this.isMobileMode() && (this.mode === 'playing' || this.mode === 'paused')) {
-      if (x > this.width - 88 && y >= 44 && y < 78) {
+      if (x > this.width - 175 && x <= this.width - 70 && y >= 44 && y < 78) {
+        const nextMode = this.mobileKeyboardMode === 'builtin' ? 'native' : 'builtin';
+        this.setMobileKeyboardMode(nextMode);
+        this.sound.playKeyHit(nextMode === 'native' ? 10 : 6);
+        this.showToast(nextMode === 'native' ? 'Keyboard: Native OS' : 'Keyboard: Built-in');
+        if (this.mode === 'playing') {
+          if (nextMode === 'native') this.nativeKb.focus();
+          else this.nativeKb.blur();
+        } else {
+          this.nativeKb.blur();
+        }
+        return;
+      }
+
+      if (x > this.width - 70 && y >= 44 && y < 78) {
         if (this.mode === 'paused') {
           this.mode = 'playing';
           this.sound.music.setMuffled(false);
+          if (this.isNativeKeyboardActive()) this.nativeKb.focus();
         } else {
           this.mode = 'paused';
           this.sound.music.setMuffled(true);
+          this.nativeKb.blur();
         }
         return;
       }
     }
 
-    // Title screen interactions (Difficulty Slider + Tap-to-Start)
+    // Title screen interactions (Difficulty Slider + Mobile KB Toggle + Tap-to-Start)
     if (this.mode === 'title') {
       this.sound.startMusic();
       this.sound.music.setIntensity(0);
@@ -323,10 +421,26 @@ export class TypingGlyphGame {
         return;
       }
 
+      if (this.isMobileMode()) {
+        const kbToggle = this.getKeyboardToggleRect();
+        if (
+          x >= kbToggle.x &&
+          x <= kbToggle.x + kbToggle.w &&
+          y >= kbToggle.y &&
+          y <= kbToggle.y + kbToggle.h
+        ) {
+          const nextMode = this.mobileKeyboardMode === 'builtin' ? 'native' : 'builtin';
+          this.setMobileKeyboardMode(nextMode);
+          this.sound.playKeyHit(nextMode === 'native' ? 10 : 6);
+          return;
+        }
+      }
+
       const startBtn = this.getStartButtonRect();
       if (x >= startBtn.x && x <= startBtn.x + startBtn.w && y >= startBtn.y && y <= startBtn.y + startBtn.h) {
         this.sound.playAbilityCast();
         this.startNewRun();
+        if (this.isNativeKeyboardActive()) this.nativeKb.focus();
         return;
       }
       return;
@@ -336,6 +450,7 @@ export class TypingGlyphGame {
     if (this.mode === 'paused') {
       this.mode = 'playing';
       this.sound.music.setMuffled(false);
+      if (this.isNativeKeyboardActive()) this.nativeKb.focus();
       return;
     }
 
@@ -345,6 +460,7 @@ export class TypingGlyphGame {
       if (x >= btn.x && x <= btn.x + btn.w && y >= btn.y && y <= btn.y + btn.h) {
         this.sound.playAbilityCast();
         this.startNewRun();
+        if (this.isNativeKeyboardActive()) this.nativeKb.focus();
       }
       return;
     }
@@ -356,34 +472,33 @@ export class TypingGlyphGame {
         const r = layout[i];
         if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) {
           this.applyUpgradeCard(this.draftCards[i]);
+          if (this.isNativeKeyboardActive()) this.nativeKb.focus();
           return;
         }
       }
       return;
     }
 
-    // Mobile Playing: Touch-Tap Ability Bar & Custom QWERTY Keyboard (multi-touch!)
+    // Mobile Playing: Touch-Tap Ability Bar & Custom QWERTY Keyboard (or Native OS Keyboard focus)
     if (this.mode === 'playing' && this.isMobileMode()) {
       const abIdx = this.mobileKb.hitTestAbility(x, y);
       if (abIdx !== null) {
         const equipped = this.getEquippedAbilityDefs();
         const ab = equipped[abIdx];
         if (ab) this.castAbility(ab);
+        if (this.isNativeKeyboardActive()) this.nativeKb.focus();
+        return;
+      }
+
+      if (this.isNativeKeyboardActive()) {
+        this.nativeKb.focus();
         return;
       }
 
       const tappedKey = this.mobileKb.hitTestKey(x, y);
       if (tappedKey !== null) {
         if (tappedKey === 'UNLOCK') {
-          if (this.lockedEnemyId !== null) {
-            const locked = this.enemies.find((en) => en.id === this.lockedEnemyId);
-            if (locked) locked.typedCount = 0;
-            this.lockedEnemyId = null;
-            this.sound.playDetarget();
-          } else if (this.bossLocked) {
-            this.bossLocked = false;
-            this.sound.playDetarget();
-          }
+          this.unlockCurrentTarget();
         } else {
           this.handleCombatTyping(tappedKey);
         }
@@ -568,14 +683,21 @@ export class TypingGlyphGame {
       if (this.mode === 'paused') {
         this.mode = 'playing';
         this.sound.music.setMuffled(false);
+        if (this.isNativeKeyboardActive()) this.nativeKb.focus();
       } else if (this.mode === 'playing') {
         this.mode = 'paused';
         this.sound.music.setMuffled(true);
+        this.nativeKb.blur();
       }
       return;
     }
 
     if (this.mode !== 'playing') return;
+
+    // Prevent double-input: when Mobile Native OS Keyboard is active, NativeKeyboardController handles a-zA-Z and Space
+    if (this.isNativeKeyboardActive() && (key === ' ' || /^[a-zA-Z]$/.test(key))) {
+      return;
+    }
 
     // Detargeting / canceling ability mode (Spacebar only)
     if (key === ' ') {
@@ -626,6 +748,7 @@ export class TypingGlyphGame {
 
   private openDraft(title: string, advanceStageAfter = false): void {
     this.mode = 'draft';
+    this.nativeKb.blur();
     this.draftTitle = title;
     this.pendingNextStage = advanceStageAfter;
     this.draftLockedIndex = null;
@@ -1561,6 +1684,7 @@ export class TypingGlyphGame {
       this.sound.music.setIntensity(0);
       this.sound.music.setMuffled(false);
       this.mode = 'victory';
+      this.nativeKb.blur();
       this.retryBuffer = '';
     } else {
       this.sound.playBossFanfare(true);
@@ -2170,6 +2294,7 @@ export class TypingGlyphGame {
 
     if (this.hp <= 0) {
       this.mode = 'gameover';
+      this.nativeKb.blur();
       this.retryBuffer = '';
       this.lockedEnemyId = null;
       this.bossLocked = false;
@@ -2576,15 +2701,21 @@ export class TypingGlyphGame {
     // 17. Top & Bottom Minimal HUD (or Custom Mobile Keyboard + Ability Bar)
     this.renderTopHud();
     if (this.isMobileMode()) {
+      const nativeActive = this.isNativeKeyboardActive();
+      const effectiveH = nativeActive ? this.visibleHeight : this.height;
       this.mobileKb.render(
         ctx,
         this.width,
-        this.height,
+        effectiveH,
         this.getEquippedAbilityDefs(),
         this.charge,
         true,
-        this.lockedEnemyId !== null || this.bossLocked
+        this.lockedEnemyId !== null || this.bossLocked,
+        nativeActive
       );
+      if (nativeActive && this.mode === 'playing' && !this.nativeKb.isFocused()) {
+        this.renderNativeKbPrompt(cx);
+      }
     } else {
       this.renderBottomHud();
     }
@@ -3045,7 +3176,7 @@ export class TypingGlyphGame {
     ctx.textAlign = 'center';
     const nextLetter = this.getBossExpectedLetter();
     const statusHint = isBossLocked
-      ? `${Math.round(pct * 100)}%  ·  ${mobile ? 'Tap UNLOCK to switch to minions' : 'Space to switch to minions'}`
+      ? `${Math.round(pct * 100)}%  ·  ${mobile && !this.isNativeKeyboardActive() ? 'Tap UNLOCK to switch to minions' : 'Space to switch to minions'}`
       : isEnemyLocked
         ? `${Math.round(pct * 100)}%  ·  Targeting minion`
         : nextLetter
@@ -3372,6 +3503,46 @@ export class TypingGlyphGame {
     if (line) ctx.fillText(line, x, currY);
   }
 
+  private drawRoundRect(x: number, y: number, w: number, h: number, r: number): void {
+    const ctx = this.ctx;
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+  }
+
+  private renderNativeKbPrompt(cx: number): void {
+    const ctx = this.ctx;
+    const text = 'Tap arena to open keyboard';
+    const y = this.mobileKb.abilityBarTopY - 36;
+    ctx.save();
+    ctx.font = '600 12px "DM Sans", "Inter", system-ui, sans-serif';
+    const pillW = ctx.measureText(text).width + 26;
+    const pillH = 26;
+    const x = cx - pillW / 2;
+    const py = y - pillH / 2;
+
+    ctx.fillStyle = 'rgba(248, 246, 241, 0.94)';
+    ctx.strokeStyle = PALETTE.crimson;
+    ctx.lineWidth = 1.2;
+    this.drawRoundRect(x, py, pillW, pillH, 13);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = PALETTE.crimson;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, cx, y + 0.5);
+    ctx.restore();
+  }
+
   private renderMuteButton(): void {
     const ctx = this.ctx;
     ctx.save();
@@ -3383,11 +3554,30 @@ export class TypingGlyphGame {
     ctx.fillText(this.isMobileMode() ? '[Mobile UI]' : '[Desktop UI]', this.width - 96, 26);
 
     if (this.isMobileMode() && (this.mode === 'playing' || this.mode === 'paused')) {
-      ctx.fillStyle = PALETTE.ink;
+      ctx.fillStyle = this.mobileKeyboardMode === 'native' ? PALETTE.crimson : PALETTE.inkMuted;
       ctx.font = '600 11px "DM Sans", "Inter", system-ui, sans-serif';
+      ctx.fillText(
+        this.mobileKeyboardMode === 'native' ? '[KB: Native]' : '[KB: Built-in]',
+        this.width - 74,
+        56
+      );
+
+      ctx.fillStyle = PALETTE.ink;
       ctx.fillText(this.mode === 'paused' ? 'Resume' : 'Pause', this.width - 16, 56);
     }
     ctx.restore();
+  }
+
+  private getKeyboardToggleRect(): { x: number; y: number; w: number; h: number } {
+    const slider = this.getDifficultySliderRect();
+    const w = Math.min(248, this.width - 48);
+    const h = 30;
+    return {
+      x: this.width / 2 - w / 2,
+      y: slider.y + 56,
+      w,
+      h,
+    };
   }
 
   private getDifficultySliderRect(): { x: number; y: number; w: number } {
@@ -3517,12 +3707,62 @@ export class TypingGlyphGame {
       slider.y + 40
     );
 
+    // Mobile Keyboard Mode Toggle Pill (Built-in vs Native OS)
+    if (mobile) {
+      const kbRect = this.getKeyboardToggleRect();
+      const isNative = this.mobileKeyboardMode === 'native';
+
+      ctx.save();
+      ctx.fillStyle = '#F8F6F1';
+      ctx.strokeStyle = PALETTE.slotBorder;
+      ctx.lineWidth = 1.2;
+      this.drawRoundRect(kbRect.x, kbRect.y, kbRect.w, kbRect.h, 15);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.textBaseline = 'middle';
+      ctx.font = '500 11px "DM Sans", "Inter", system-ui, sans-serif';
+      const labelY = kbRect.y + kbRect.h / 2 + 0.5;
+      const prefix = 'Keyboard: ';
+      const optBuiltin = 'Built-in';
+      const sep = '  |  ';
+      const optNative = 'Native OS';
+
+      const wPrefix = ctx.measureText(prefix).width;
+      const wBuiltin = ctx.measureText(optBuiltin).width;
+      const wSep = ctx.measureText(sep).width;
+      const wNative = ctx.measureText(optNative).width;
+      let tx = cx - (wPrefix + wBuiltin + wSep + wNative) / 2;
+
+      ctx.textAlign = 'left';
+      ctx.fillStyle = PALETTE.inkMuted;
+      ctx.fillText(prefix, tx, labelY);
+      tx += wPrefix;
+
+      ctx.font = `${!isNative ? '600' : '400'} 11px "DM Sans", "Inter", system-ui, sans-serif`;
+      ctx.fillStyle = !isNative ? PALETTE.crimson : PALETTE.inkMuted;
+      ctx.fillText(optBuiltin, tx, labelY);
+      tx += wBuiltin;
+
+      ctx.font = '400 11px "DM Sans", "Inter", system-ui, sans-serif';
+      ctx.fillStyle = PALETTE.inkFaint;
+      ctx.fillText(sep, tx, labelY);
+      tx += wSep;
+
+      ctx.font = `${isNative ? '600' : '400'} 11px "DM Sans", "Inter", system-ui, sans-serif`;
+      ctx.fillStyle = isNative ? PALETTE.crimson : PALETTE.inkMuted;
+      ctx.fillText(optNative, tx, labelY);
+      ctx.restore();
+    }
+
     ctx.textAlign = 'center';
     ctx.font = '400 11px "DM Sans", "Inter", system-ui, sans-serif';
     ctx.fillStyle = PALETTE.inkMuted;
     ctx.fillText(
       mobile
-        ? 'Built-in QWERTY keyboard  ·  Tap ability buttons  ·  Mobile pace tuned'
+        ? this.mobileKeyboardMode === 'native'
+          ? 'Native OS keyboard  ·  Tap ability buttons  ·  Mobile pace tuned'
+          : 'Built-in QWERTY keyboard  ·  Tap ability buttons  ·  Mobile pace tuned'
         : 'A–Z Lock & Fire   ·   Space Detarget   ·   !pulse & Drafted Weapons',
       cx,
       this.height - 24

@@ -49,13 +49,34 @@ export class MobileKeyboardUI {
   public trayTopY = 0;
   public abilityBarTopY = 0;
 
-  public layout(width: number, height: number): void {
+  public layout(width: number, height: number, nativeMode = false): void {
     this.keyRects = [];
     this.abilityRects = [];
 
     const padX = Math.max(6, Math.min(14, width * 0.02));
     const maxKbW = Math.min(width - padX * 2, 540);
     const startX = (width - maxKbW) / 2;
+
+    if (nativeMode) {
+      // Native OS Keyboard mode: omit canvas QWERTY rows and anchor ability bar at bottom of visible viewport
+      const abH = 42;
+      const abGap = 6;
+      const abTop = height - abH - 8;
+      this.trayTopY = height;
+      this.abilityBarTopY = abTop;
+      const abW = (maxKbW - abGap * 4) / 5;
+
+      for (let i = 0; i < 5; i++) {
+        this.abilityRects.push({
+          index: i,
+          x: startX + i * (abW + abGap),
+          y: abTop,
+          w: abW,
+          h: abH,
+        });
+      }
+      return;
+    }
 
     // Keyboard tray height (~31% of viewport, clamped comfortably)
     const kbH = Math.max(176, Math.min(246, height * 0.31));
@@ -189,8 +210,11 @@ export class MobileKeyboardUI {
     equippedAbilities: AbilityDef[],
     charge: number,
     showAbilityBar: boolean,
-    hasLockedTarget = false
+    hasLockedTarget = false,
+    nativeMode = false
   ): void {
+    if (nativeMode && !showAbilityBar) return;
+
     ctx.save();
 
     // Subtle keyboard backdrop tray
@@ -254,38 +278,40 @@ export class MobileKeyboardUI {
     }
 
     // Pure Paper-and-Pencil QWERTY Keys (no next-letter hints!)
-    for (const r of this.keyRects) {
-      const pressed = this.pressedTimers.has(`${r.key}_${Math.round(r.x)}`);
-      const isUnlock = r.key === 'UNLOCK';
-      const unlockActive = isUnlock && hasLockedTarget;
+    if (!nativeMode) {
+      for (const r of this.keyRects) {
+        const pressed = this.pressedTimers.has(`${r.key}_${Math.round(r.x)}`);
+        const isUnlock = r.key === 'UNLOCK';
+        const unlockActive = isUnlock && hasLockedTarget;
 
-      ctx.fillStyle = pressed
-        ? PALETTE.keyPressedBg
-        : unlockActive
-          ? '#F3E8E6'
-          : isUnlock
-            ? '#EAE5DB'
-            : PALETTE.keyBg;
-      this.roundRect(ctx, r.x, r.y, r.w, r.h, 5);
-      ctx.fill();
+        ctx.fillStyle = pressed
+          ? PALETTE.keyPressedBg
+          : unlockActive
+            ? '#F3E8E6'
+            : isUnlock
+              ? '#EAE5DB'
+              : PALETTE.keyBg;
+        this.roundRect(ctx, r.x, r.y, r.w, r.h, 5);
+        ctx.fill();
 
-      ctx.strokeStyle = pressed || unlockActive ? PALETTE.crimson : PALETTE.keyBorder;
-      ctx.lineWidth = unlockActive ? 1.5 : 1;
-      ctx.stroke();
+        ctx.strokeStyle = pressed || unlockActive ? PALETTE.crimson : PALETTE.keyBorder;
+        ctx.lineWidth = unlockActive ? 1.5 : 1;
+        ctx.stroke();
 
-      ctx.fillStyle = pressed
-        ? PALETTE.keyPressedText
-        : unlockActive
-          ? PALETTE.crimson
-          : isUnlock
-            ? PALETTE.inkMuted
-            : PALETTE.ink;
-      ctx.font = isUnlock
-        ? '600 11px "DM Sans", "Inter", system-ui, sans-serif'
-        : '600 16px "DM Sans", "Inter", system-ui, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(r.label, r.x + r.w / 2, r.y + r.h / 2 + 0.5);
+        ctx.fillStyle = pressed
+          ? PALETTE.keyPressedText
+          : unlockActive
+            ? PALETTE.crimson
+            : isUnlock
+              ? PALETTE.inkMuted
+              : PALETTE.ink;
+        ctx.font = isUnlock
+          ? '600 11px "DM Sans", "Inter", system-ui, sans-serif'
+          : '600 16px "DM Sans", "Inter", system-ui, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(r.label, r.x + r.w / 2, r.y + r.h / 2 + 0.5);
+      }
     }
 
     ctx.restore();

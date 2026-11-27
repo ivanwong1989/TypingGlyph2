@@ -61,7 +61,9 @@ Automatically activates when `(pointer: coarse)` matches or viewport width `< 76
 * **Portrait Split-Screen Layout:**
   * **Top Arena:** Center glyph and enemy spawns shift cleanly into the upper playfield above the controls. Enemy word labels are clamped inside left/right screen margins so nothing clips on narrow screens.
   * **Middle Strip:** 4-pip Shared Charge Bar + **5 thumb-friendly touch-tap Ability Buttons** (no `!` prefix required).
-  * **Bottom Tray — Custom In-Game QWERTY Keyboard (`src/ui/mobileKeyboard.ts`):** Canvas-rendered paper-and-pencil keyboard (zero OS keyboard, zero autocomplete/autocorrect, zero viewport resize jank, **100% pure with no next-letter highlight hints**). Fires on **`pointerdown`** with multi-touch support (`touch-action: none`), crimson press flash, subtle haptic buzz (`navigator.vibrate`), clean `Z–M` bottom letter row (no Backspace key), and a wide **`SPACE · UNLOCK TARGET`** thumb bar that highlights in crimson when a target is locked.
+  * **Bottom Tray — Custom In-Game QWERTY Keyboard (`src/ui/mobileKeyboard.ts`) or Optional Native OS Keyboard (`src/ui/nativeKeyboard.ts`):**
+    * *Built-in (Default):* Canvas-rendered paper-and-pencil keyboard (zero OS keyboard, zero autocomplete/autocorrect, zero viewport resize jank, **100% pure with no next-letter highlight hints**). Fires on **`pointerdown`** with multi-touch support (`touch-action: none`), crimson press flash, subtle haptic buzz (`navigator.vibrate`), clean `Z–M` bottom letter row (no Backspace key), and a wide **`SPACE · UNLOCK TARGET`** thumb bar that highlights in crimson when a target is locked.
+    * *Native OS Keyboard (Optional Toggle):* Switchable on the Title Screen (`Keyboard: Built-in | Native OS`) or mid-run (`[KB: Built-in]` / `[KB: Native]`), persisted in `localStorage` (`typingglyph_mobile_kb`). Uses a hidden `<input>` (`src/ui/nativeKeyboard.ts`) with `visualViewport` tracking so the arena and touch ability bar shrink cleanly above the device's OS keyboard.
 * **Automatic Mobile Ergonomic Balance Tuning:**
   * Arena-proportional enemy speed (`0.38×–0.56×` based on portrait arena radius so travel time matches desktop), gentler spawn cadence (`× 0.64`), lower active enemy cap (`9`), anti-clumping perimeter spawn spacing, staggered Boss minion waves, and `+20%` per-letter knockback boost.
   * Shorter-word bias (78% `SHORT_WORDS` even on medium/heavy enemies).
@@ -152,7 +154,8 @@ Powered by a **100-point (4-pip)** shared charge pool filled by completing words
   * `index.html`, `src/style.css`, `src/main.ts` — Fullscreen high-DPI canvas shell (`touch-action: none`).
   * `src/game/types.ts` — All entity, boss, ability, weapon, difficulty, and VFX interfaces.
   * `src/game/game.ts` — Core loop, input (keyboard + multi-touch `pointerdown`), 3-stage wave/boss director, typing draft system, Smudge, all 10 abilities/weapons, desktop & mobile renderers.
-  * `src/ui/mobileKeyboard.ts` — Custom Canvas paper-and-pencil QWERTY keyboard + touch-tap ability bar.
+  * `src/ui/mobileKeyboard.ts` — Custom Canvas paper-and-pencil QWERTY keyboard + touch-tap ability bar (supports both built-in and native-keyboard layout modes).
+  * `src/ui/nativeKeyboard.ts` — Hidden `<input>` bridge for optional mobile Native OS Keyboard mode (iOS Safari & Android IME safe).
   * `src/data/words.ts` — Curated short/medium word pools with starting-letter collision avoidance.
   * `src/data/content.ts` — Difficulty presets, all 10 `!` abilities, 17 upgrade cards, and 3 boss passage configs.
   * `src/audio/music.ts` & `src/audio/sound.ts` — Multi-section adaptive soundtrack & procedural foley.
