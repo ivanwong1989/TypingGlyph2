@@ -1,14 +1,20 @@
-# TypingGlyph — Game Design Document
+# TypingGlyph — Game Design Document & Handoff
+
+> **Status:** Playable Desktop & Mobile HTML5 Prototype Live on GitHub Pages
+> **Repository:** https://github.com/ivanwong1989/TypingGlyph2
+> **Live Build:** https://ivanwong1989.github.io/TypingGlyph2/
+
+---
 
 ## 1. High Concept
 
-**TypingGlyph** is a 2D minimalist center-defense typing roguelike set on a warm sheet of drafting paper. You control a geometric glyph at the center of the screen, defending against waves of incoming ink-and-pencil shapes by typing the words above them. Every correct keystroke fires a graphite dart; typos build up a **Smudge** meter that blots and reinforces your enemies.
+**TypingGlyph** is a 2D minimalist center-defense typing roguelike set on a warm sheet of drafting paper. You control a geometric glyph at the center of the arena, defending against waves of incoming ink-and-pencil shapes by typing the words above them. Every correct keystroke fires a graphite dart; typos build up a **Smudge** meter that blots and reinforces your enemies.
 
-Across a tight **5-minute, 3-stage boss run**, you draft passive upgrades and special **`!` Glyph Abilities** powered by a shared charge pool, navigating an adaptive soundscape that rises from meditative sketching to high-tempo urgency.
+Across a tight **5-minute, 3-stage boss run**, you draft passive upgrades and flashy **`!` Glyph Abilities / Weapons** powered by a shared charge pool, accompanied by a multi-section adaptive soundtrack that rises from calm studio focus to high-tempo urgency.
 
 * **Genre:** 2D Arcade Typing / Center-Defense Roguelike
 * **Session Length:** ~5 minutes per full 3-stage run
-* **Platform:** Browser-based HTML5 (Desktop keyboard-first; Mobile responsive with touch-tap ability buttons)
+* **Platform:** Browser-based HTML5 (Static site — Desktop keyboard-first + Auto-detected Mobile portrait UI)
 * **Visual Theme:** Paper, pencil, graphite, crimson ink accents, and minimalist geometry
 
 ---
@@ -16,216 +22,160 @@ Across a tight **5-minute, 3-stage boss run**, you draft passive upgrades and sp
 ## 2. Core Gameplay Loop
 
 ```
-[Stage Wave (~1:15)] ──► [XP Level-Up Draft (1 of 3)] ──► [Stage Boss (~0:25–0:30)]
+[Stage Wave (1:15)] ──► [XP Level-Up Draft (1 of 3)] ──► [Stage Boss (~0:25–0:30)]
          ▲                                                           │
          └─────────────── [Boss Upgrade Draft] ◄─────────────────────┘
                                                                      │
                                             (After Stage 3 Boss) ────▼
-                                            [Run Summary & Meta-Unlocks]
+                                            [Victory / Run Summary]
 ```
 
-1. **Defend the Center:** Enemies spawn from the edges of the page and converge on your central glyph (`300 / 300` HP).
-2. **Type to Shoot:** Typing the first letter of an enemy's word locks onto the closest matching enemy. Each subsequent correct letter fires a fast graphite dart with slight knockback; finishing the word destroys the enemy (or strips one armor layer).
-3. **Manage Smudge:** Typos trigger a tactile clunk and fill the **Smudge Bar**, punishing sloppy bursts with reinforced enemies.
-4. **Spend Shared Charge on `!` Abilities:** Completing words builds a shared **Flow/Graphite Charge** pool. Spend it on drafted `!` abilities to clear swarms, slow time, shield, or mend.
-5. **Draft & Adapt:** Leveling up and defeating bosses lets you choose 1 of 3 randomized upgrades/abilities (including rare healing options), shaping a distinct build within 5 minutes.
-6. **Beat 3 Bosses:** Survive 3 escalating stages and defeat each geometric boss via its scrolling incantation passage while juggling minions.
+1. **Defend the Center:** Enemies spawn from the arena perimeter and converge on your central glyph (`300 / 300` base HP).
+2. **Type to Shoot:** Typing the first letter of an enemy's word locks onto the closest matching enemy. Each correct letter fires a fast graphite dart with radial knockback; finishing the word shatters the enemy (or strips one `²` armor layer).
+3. **Manage Smudge:** Typos trigger a tactile scratch/clunk and fill the **Smudge Bar**, punishing sloppy bursts with reinforced `²` enemies.
+4. **Spend Shared Charge on `!` Abilities & Weapons:** Completing words builds a shared **100-point (4-pip) Charge Pool** spent on active `!` commands (desktop) or touch-tap buttons (mobile).
+5. **Draft & Adapt:** Leveling up and defeating bosses presents 3 randomized cards (including rare healing options). No free between-stage heals.
+6. **Beat 3 Bosses:** Survive 3 escalating stages and defeat each geometric boss via its scrolling passage ticker while juggling minions.
 
 ---
 
-## 3. Controls & Input Ergonomics
+## 3. Controls, Readability & Difficulty
+
+### Typography Color Standard (Strictly Grey + Red)
+To eliminate any ambiguity between typed and untyped letters:
+* **Untyped letters:** Muted pencil grey (`#8C8984`) across all enemy words, Boss passage tickers, draft card keywords, and `start`/`retry` prompts.
+* **Typed letters:** Crisp crimson red (`#B83A3A`).
+* Locked enemies are distinguished by a pulsing crimson targeting reticle + crosshair around their geometric body, a crimson-bordered word pill with target pointer, an animated crimson dashed sightline from the center glyph, and dimmed unfocused words—never by changing untyped text to black.
+* Locked Bosses are distinguished by a `● TARGETING` header, pulsing crimson reticle around the Boss emblem, a crimson-bordered passage ticker, and dimmed minion labels; when targeting a minion, the Boss ticker dims and switches to a muted grey cursor.
 
 ### Desktop (Pure Keyboard)
-Hands never need to leave the home row:
-* **`A–Z`:** Lock onto the closest enemy starting with that letter (if unlocked), or advance the currently locked word/boss passage.
-* **`Backspace`:** Immediately **detarget** (cancel lock-on) to pivot to a higher-priority enemy.
-* **`!` (`Shift + 1`):** Enter **Glyph Cast Mode** (cancels any active enemy lock). Follow with an equipped ability keyword (e.g., `!nova`, `!ward`) to trigger it. Pressing `Backspace` exits Glyph Cast Mode.
-* **Typing Upgrade Cards:** During draft pauses, each of the 3 upgrade cards displays a short keyword/name (guaranteed unique starting letters); simply **type the card's word** to select it (`Backspace` cancels if you change your mind mid-word), keeping the entire experience 100% pure typing.
+* **`A–Z`:** Lock onto closest matching enemy (or advance locked word / Boss passage). Boss passages auto-skip spaces when typing the next letter.
+* **`Space`:** Immediately **detarget / unlock** the current enemy, unlock the Boss, exit `!` Glyph Cast Mode, or cancel a locked draft card. (Backspace is disabled.)
+* **`!` (`Shift + 1`):** Enter **Glyph Cast Mode** (cancels active enemy/boss lock) and type an equipped command (e.g., `!pulse`, `!swarm`, `!orbit`, `!drone`).
+* **Typing Upgrade Cards:** During draft pauses, each of the 3 cards has a short keyword with guaranteed unique starting letters—simply type the keyword to draft it (clicking also works).
+* **`←` / `→` (Title Screen):** Adjust Difficulty Slider.
 * **`Esc`:** Pause / resume run.
 
-### Mobile (Responsive Browser)
-* **Custom In-Game Keyboard:** Renders a dedicated minimalist, paper-and-pencil QWERTY keyboard directly inside the game UI instead of invoking the native OS keyboard—eliminating autocomplete/autocorrect cheating, preventing viewport resize jank, and keeping the visual aesthetic intact.
-* **Integrated `Backspace` Key:** Built into the custom keyboard for instant detargeting.
-* **Special Abilities:** Surfaced as **touch-tap buttons** in a compact bar directly above the custom keyboard (bypassing the need for `!` on mobile), showing each ability's charge cost and ready state.
-* **Upgrade Drafting:** Cards can be tapped directly (or typed on the custom keyboard).
+### Mobile (Auto-Detected Portrait Split-Screen)
+Automatically activates when `(pointer: coarse)` matches or viewport width `< 768px`. A top-right **`[Mobile UI]` / `[Desktop UI]`** toggle is also available for previewing on desktop.
+* **Portrait Split-Screen Layout:**
+  * **Top Arena:** Center glyph and enemy spawns shift cleanly into the upper playfield above the controls. Enemy word labels are clamped inside left/right screen margins so nothing clips on narrow screens.
+  * **Middle Strip:** 4-pip Shared Charge Bar + **5 thumb-friendly touch-tap Ability Buttons** (no `!` prefix required).
+  * **Bottom Tray — Custom In-Game QWERTY Keyboard (`src/ui/mobileKeyboard.ts`):** Canvas-rendered paper-and-pencil keyboard (zero OS keyboard, zero autocomplete/autocorrect, zero viewport resize jank, **100% pure with no next-letter highlight hints**). Fires on **`pointerdown`** with multi-touch support (`touch-action: none`), crimson press flash, subtle haptic buzz (`navigator.vibrate`), clean `Z–M` bottom letter row (no Backspace key), and a wide **`SPACE · UNLOCK TARGET`** thumb bar that highlights in crimson when a target is locked.
+* **Automatic Mobile Ergonomic Balance Tuning:**
+  * Arena-proportional enemy speed (`0.38×–0.56×` based on portrait arena radius so travel time matches desktop), gentler spawn cadence (`× 0.64`), lower active enemy cap (`9`), anti-clumping perimeter spawn spacing, staggered Boss minion waves, and `+20%` per-letter knockback boost.
+  * Shorter-word bias (78% `SHORT_WORDS` even on medium/heavy enemies).
+  * Smudge forgiveness: `+20%` per typo (5 typos to proc instead of 4).
+* **Mobile Menus:** `TAP TO START` / `PLAY AGAIN` buttons, top-right `Pause` button, touchable Difficulty Slider, and **3 vertically stacked tappable upgrade cards**.
 
-### Targeting & Word-Spawning Rules
-* **No Starting-Letter Collisions (Soft Rule):** The spawner avoids spawning a new enemy whose starting letter matches an already-active enemy whenever possible (up to 26 active enemies). If collisions occur in dense waves, locking prioritizes the **closest enemy to the center**.
-* **Word Dictionary:** Clean, lowercase English words curated by length and typing comfort:
-  * **Short (3–4 letters):** Swarmers & fast shapes (`dot`, `arc`, `vile`, `jibs`, `park`, `pill`)
-  * **Medium (5–7 letters):** Standard units (`share`, `prism`, `sketch`, `vector`)
-  * **Long (8–11 letters):** Elites & heavy units (`parallel`, `symmetry`, `graphite`)
+### Difficulty Slider (Title Screen)
+Persisted in `localStorage` (`typingglyph_difficulty`), adjustable via `←`/`→` or click/tap:
+| Preset | Speed | Spawn Rate | Damage | Notes |
+| :--- | :---: | :---: | :---: | :--- |
+| **Relaxed** | `0.65×` | `0.72×` | `0.70×` | Chill studio pace |
+| **Standard** *(Default)* | `0.85×` | `0.88×` | `0.85×` | Balanced 3-boss roguelike challenge |
+| **Challenging** | `1.00×` | `1.02×` | `1.00×` | Brisk waves & sharp reflexes |
+| **Master** | `1.22×` | `1.20×` | `1.20×` | Relentless ink swarms |
 
 ---
 
-## 4. Combat Mechanics
+## 4. Combat Mechanics & Active Weapons
 
 ### 4.1 Per-Letter Shots & Knockback
-* Every correct keystroke fires a thin pencil-stroke projectile from the center glyph to the locked enemy.
-* Each hit deals chip impact with a **tiny radial knockback**, giving immediate physical feedback and rewarding high WPM.
-* Completing the final letter executes the enemy (shattering it into geometric pencil shavings/dots) and grants **XP** and **Ability Charge**.
-* **Armored Enemies (`²`):** Displayed with a thin rectangular box around their word and a `²` superscript. Completing their word cracks the box, deals heavy knockback, and assigns a fresh word to finish them.
+* Every correct keystroke fires a tapered graphite dart from the center glyph with light radial knockback, target hit-scale pop, and center glyph recoil.
+* Completing a word triggers a **Death Boom** (core flash disc, calligraphic starburst rays, expanding rotating wireframe polygon matching the enemy's shape, crimson + graphite shards, lingering fading ink stain on the paper, and deep sub-boom audio).
+* **Armored Enemies (`²`):** Boxed word with `²` superscript; finishing the word cracks 1 layer and assigns a fresh word.
 
 ### 4.2 The Smudge Mechanic (Typo Penalty)
-* **Feedback:** Each wrong keystroke plays a crisp pencil-scratch/clunk sound, briefly shakes the locked word, and leaves a faint graphite smudge visual.
-* **Smudge Bar:** A subtle graphite meter sits near the center glyph.
-  * Each typo adds **+25% Smudge** (tunable).
-  * Typing cleanly causes the Smudge Bar to **dry/drain smoothly over time** (~8%/sec after a 0.8s grace delay).
-* **Smudge Proc (at 100%):**
-  * The bar flashes crimson/charcoal and resets to 0%.
-  * A **Smudge Charge** primes on your glyph: the **next enemy you lock onto** is immediately blotted with an ink-smudge shield, gaining an extra `²` layer (requiring an additional word to destroy).
-* **Roguelike Synergies:** Certain upgrades can interact with Smudge (e.g., *Blotter Paper* slows Smudge buildup; *Charcoal Burst* causes Smudged enemies to explode on death, turning mistakes into risky AoE).
+* Each typo plays a graphite scratch/clunk, shakes the enemy word, and adds **+25% Smudge** (desktop) or **+20% Smudge** (mobile).
+* Typing cleanly dries the Smudge Bar smoothly over time (`9%/sec` after a `0.85s` delay).
+* At **100%**, Smudge resets and primes (`SMUDGE PRIMED`): the **next enemy you lock onto** is immediately ink-blotted with an extra `²` armor layer.
 
-### 4.3 Shared Charge Pool & `!` Special Abilities
-* **Shared Pool:** A **100-point Charge Pool** (visually segmented into **4 pips** of 25 charge each) displayed cleanly near the bottom loadout bar.
-* **Generating Charge:** Completing enemy words grants charge (+6 to +15 depending on word length). High accuracy/streaks slightly boost charge gain.
-* **Casting:** On desktop, type `!` + ability word (e.g., `!nova`). If you have enough charge, it fires immediately and deducts the cost. On mobile, tap the ability icon.
+### 4.3 Shared Charge Pool & `!` Special Abilities (10 Total)
+Powered by a **100-point (4-pip)** shared charge pool filled by completing words. Players start with `!pulse` and can hold up to **5 active abilities** in the bottom loadout slots (early drafts guarantee at least 1 active ability card while slots are open):
 
-#### Starter & Draftable `!` Abilities
-| Ability | Desktop Command | Cost | Effect |
-| :--- | :--- | :--- | :--- |
-| **Pulse** *(Starter)* | `!pulse` | 25 (1 pip) | Radial pencil-ring shockwave that knocks all nearby enemies back and interrupts charges. |
-| **Nova** | `!nova` | 75 (3 pips) | Expanding crimson ink ring that strips 1 word/armor layer from all enemies within medium radius. |
-| **Still** | `!still` | 50 (2 pips) | Slows all enemy movement by 65% for 4 seconds ("sketch freeze"). |
-| **Lance** | `!lance` | 50 (2 pips) | Fires a piercing ruler-line beam through the closest enemy, destroying all enemies in that line. |
-| **Ward** | `!ward` | 50 (2 pips) | Draws a rotating geometric barrier around your glyph that blocks the next 2 enemy hits (or 60 damage). |
-| **Mend** *(Rare Draft)* | `!mend` | 75 (3 pips) | Restores 45 HP to the center glyph. *(Primary active healing option.)* |
-| **Blot** | `!blot` | 25 (1 pip) | Instantly clears the Smudge Bar and converts remaining Smudge into a small burst of damage to the nearest enemy. |
+| Ability | Command | Cost | Effect |
+| :--- | :--- | :---: | :--- |
+| **Pulse** *(Starter)* | `!pulse` | 25 | Double drafting-compass shockwave knocking back nearby foes. |
+| **Blot** | `!blot` | 25 | Clears Smudge Bar & blasts the nearest enemy with an ink bolt. |
+| **Still** | `!still` | 50 | Blueprint-grid slow overlay reducing enemy speed by 65% for 4.5s. |
+| **Ward** | `!ward` | 50 | Rotating dashed crimson barrier blocking the next 2 hits (stacks to 4). |
+| **Lance** | `!lance` | 50 | Full-screen piercing ruler-line beam through the closest enemy. |
+| **Swarm** *(Weapon)* | `!swarm` | 50 | Launches **6 curving homing calligraphy ink darts** across the page. |
+| **Drone** *(Weapon)* | `!drone` | 50 | Deploys **2 origami paper-plane hunter drones** that auto-zap foes for 8s. |
+| **Nova** | `!nova` | 75 | Expanding crimson ink ring stripping 1 layer from all nearby foes. |
+| **Orbit** *(Weapon)* | `!orbit` | 75 | **Dual spinning pencil lasers** sweeping the arena for 4.5s. |
+| **Mend** *(Rare Heal)* | `!mend` | 75 | Restores 55 HP to the center glyph. |
 
----
-
-## 5. Health, Damage & Roguelike Progression
-
-### Ship Health & Recovery
-* **Base HP:** `300 / 300` (displayed cleanly beneath the center glyph).
-* **Damage:** Enemies deal contact damage on reaching the center (scaled by archetype, e.g., 15 for Swarmers, 35 for Heavies, 50 for Boss hazards) and are destroyed on impact.
-* **No Free Stage Heals:** To preserve roguelike tension and luck, **HP does not automatically regenerate** between stages. Recovery comes exclusively from randomly offered upgrades (e.g., *Fresh Sheet*, *Vampiric Nib*) or drafting the `!mend` ability.
-
-### Loadout Slots & Upgrade Drafting
-* **5 Loadout Slots** along the bottom of the screen (matching the minimalist HUD): hold your drafted active `!` abilities and major passive glyphs.
-* **Draft Timing (~5 picks per 5-minute run):**
-  * **3 XP Level-Ups** triggered naturally during waves (1 per stage).
-  * **2 Boss Clear Drafts** (after Stage 1 and Stage 2 bosses).
-* Each draft pauses the action (softly dimming the page and easing the audio) and presents **3 randomized cards** (selected by **typing the card's keyword** on desktop, or tapping on mobile; the 3 offered cards always have distinct starting letters for clean lock-on):
-  * **Active `!` Abilities** (unlock new commands or upgrade existing ones)
-  * **Passive Modifiers** (e.g., *Sharp Lead*: +35% knockback per letter; *Chain Sketch*: finishing a word damages a nearby enemy's first 2 letters; *Flow State*: 15+ clean keystroke streak grants +40% charge gain; *Auto-Compass*: fires a free stray dart every 3 completed words)
-  * **Survival / Utility (Random Pool):** *Fresh Sheet* (+60 Max HP & heal 60), *Vampiric Nib* (heal 2 HP per word finished while below 50% HP), *Blotter* (-35% Smudge gain), *Charcoal Burst* (Smudged enemies explode on death).
+### 4.4 Passive & Survival Upgrades
+* **Passives:** `Sharp Lead` (+45% knockback), `Chain Sketch` (word finish strikes 2 letters off a nearby foe), `Ink Flow` (+40% charge gain), `Auto-Compass` (every 3rd word fires a free dart at closest foe), `Charcoal Burst` (Smudged enemies explode on death).
+* **Survival (Random Pool — No Free Stage Heals):** `Fresh Sheet` (+60 Max HP & heal 60), `Vampiric Nib` (heal 4 HP per word when < 50% HP), `Blotter Paper` (-35% Smudge gain & +60% faster drying).
 
 ---
 
-## 6. Run Pacing & Enemies (~5-Minute Structure)
+## 5. Run Pacing, Enemies & 3 Geometric Bosses
 
-| Phase | Target Time | Wave Focus | Audio Intensity |
-| :--- | :--- | :--- | :--- |
-| **Stage 1: Sketch** | `0:00 – 1:15` | Dots, Circles, first `²` Armored units | Calm ambient paper/plucked motif, gentle pulse |
-| **Boss 1: The Compass** | `1:15 – 1:40` | Orbiting minion rings + Boss passage | Steady rhythmic percussion enters |
-| **Stage 2: Crosshatch** | `1:40 – 2:55` | Arrows (fast), Pentagons (`²` armored), Splitters | Faster tempo, layered rhythmic synth/strings |
-| **Boss 2: The Eraser** | `2:55 – 3:25` | Letter-fading waves + Smudge pressure + Boss passage | Tense syncopated pulse, sharp foley |
-| **Stage 3: Calligraphy** | `3:25 – 4:30` | Mixed formations, high-speed swarms, heavy `²` guards | High urgency, driving beat |
-| **Boss 3: The Architect** | `4:30 – 5:00` | Multi-phase finale passage + geometric guards | Peak crescendo → calm resolution on clear |
+### 5-Minute 3-Stage Structure
+* **Stage 1: Sketch** (`1:15` wave) → **Boss 1: The Compass** → Boss Draft
+* **Stage 2: Crosshatch** (`1:15` wave) → **Boss 2: The Eraser** → Boss Draft
+* **Stage 3: Calligraphy** (`1:15` wave) → **Boss 3: The Architect** → Victory Screen
+* Plus XP level-up drafts naturally triggered during waves (~5 total drafts per run).
 
-### Enemy Archetypes
-* **Dot (Swarmer):** Small crimson dot. Short 3–4 letter words, steady speed, low contact damage (15).
-* **Ring (Standard):** Concentric circle. Medium 5–6 letter words, moderate speed, 20 damage.
-* **Arrow (Dart):** Sleek crimson chevron. Short 3–4 letter words, **high speed**, forces quick `Backspace` detargeting (20 damage).
-* **Pentagon (Armored `²`):** Boxed word with `²` superscript. Slow, takes 2 full words to destroy, 35 damage.
-* **Diamond (Splitter):** Double-lined diamond. Medium word; when destroyed, splits into 2 fast **Dots** with 3-letter words.
+### 5 Enemy Archetypes
+1. **Dot:** Fast crimson dot, short 3–4 letter word, 15 dmg.
+2. **Ring:** Concentric crimson circle, medium word, 20 dmg.
+3. **Arrow:** High-speed crimson chevron, short word, 20 dmg.
+4. **Pentagon (`²`):** Slow armored pentagon, boxed word requiring 2 words, 35 dmg.
+5. **Diamond (Splitter):** Double-lined diamond; splits into 2 fast Dots on death, 25 dmg.
 
----
-
-## 7. Boss Fights (3 Geometric Guardians)
-
-All bosses manifest at the top-center of the page with a distinct geometric emblem, an HP/completion bar, and a **scrolling horizontal passage ticker** (with a vertical crimson cursor showing your current letter and `%` progress). Typing the current highlighted letter of the passage locks onto the boss—you can freely press `Backspace` to peel off incoming minions and then jump right back into the passage where you left off.
-
-### Boss 1 — **The Compass** *(Stage 1)*
-* **Visual:** An all-seeing geometric eye framed by drafting-compass arcs.
-* **Passage:** Short, rhythmic literary/geometric aphorisms (~65–80 characters, e.g., *"to be, or not to be, that is the question of the line"*).
-* **Mechanics:**
-  * Periodically draws a faint circular pencil arc around the arena, spawning a synchronized ring of 4–5 **Dots** from the circumference.
-  * Teaches the core boss skill: type bursts of the boss passage, press `Backspace` to clear encroaching Dots (or cast `!pulse`), then resume the passage.
-
-### Boss 2 — **The Eraser** *(Stage 2)*
-* **Visual:** A crisp, hovering oblique monolith with a subtle smudged aura.
-* **Passage:** Medium passage (~95–110 characters) divided into 2 mini-phases.
-* **Mechanics:**
-  * **Erase Pulse:** Every ~8 seconds, a soft translucent rubber-wipe sweeps across the screen, temporarily **fading 1–2 letters** on active minion words for 1.5 seconds (requiring memory or quick clears before the wipe hits).
-  * **Hesitation Smudge:** If the player stops typing for more than 2 seconds during the fight, the Smudge Bar creeps upward slowly—rewarding steady flow over panic.
-  * Spawns **Arrows** and **Pentagons (`²`)**.
-
-### Boss 3 — **The Architect** *(Stage 3 Final Boss)*
-* **Visual:** An intricate rotating polyhedron-eye sigil that unfolds new geometric rings as its HP drops.
-* **Passage:** Dramatic 2-phase incantation (~130–150 characters total).
-* **Mechanics:**
-  * **Phase 1 (100% → 50%):** Summons geometric formations (triangular wedges of **Arrows** + a **Diamond** splitter).
-  * **Phase 2 (50% → 0%):** Tempo peaks! The Architect draws a faint shrinking margin frame around the page (visual urgency) and deploys a pair of `²` **Pentagon** bodyguards alongside fast **Dots**. Completing the final letter shatters the Architect into a cascade of drifting geometric lines and clears the page.
+### 3 Geometric Bosses (Scrolling Horizontal Passage Ticker)
+* **Boss 1 — The Compass:** Eye-and-arc sigil; draws drafting arcs and spawns synchronized rings of 4 Dots.
+* **Boss 2 — The Eraser:** Oblique monolith; sweeps an animated **Erase Wave** down the page that briefly fades 1–2 letters on active minion words, plus **Hesitation Smudge** if the player stops typing for > 2.2s.
+* **Boss 3 — The Architect:** Rotating polyhedron-eye; **Phase 1** spawns Arrow wedges + Diamond splitters; **Phase 2 (50% HP)** draws a pulsing crimson drafting margin frame around the screen, deploys `²` Pentagon guards, and peaks the music intensity.
 
 ---
 
-## 8. Visual & Audio Direction
+## 6. Audio Direction (Implemented — Web Audio API)
 
-### Visual Style (Paper, Pencil & Geometry)
-* **Color Palette:**
-  * **Background:** Warm off-white parchment (`#F2EFE9`) with subtle procedural paper grain and a soft warm-grey vignette (`#CFCBC2`).
-  * **Primary Ink / Typography:** Graphite charcoal (`#2B2A29`) for typed/active letters; muted pencil grey (`#8C8984`) for untyped letters and UI frames.
-  * **Danger / Accent:** Vermilion / red-pencil ink (`#B83A3A`) for enemy cores, active target cursors, damage flashes, and Smudge warnings.
-* **Typography:** Clean geometric sans-serif (e.g., *Inter*, *DM Sans*, or *Space Grotesk*) with tabular numerals for HP/WPM and a crisp monospace option in settings.
-* **Juicy Micro-Feedback:**
-  * Subtle pencil-stroke trails behind per-letter darts.
-  * Ink-ring ripples when completing a word.
-  * Soft charcoal smudge texture that overlays the screen edges slightly as the Smudge Bar nears 100%.
-
-### Adaptive Audio Design
-* **Baseline Vibe:** Relaxing, tactile, and focused—like sketching in a quiet studio.
-* **Dynamic Layering (Web Audio API):**
-  * **Layer 1 (Stage 1):** Warm minimalist plucked/felt-piano arpeggio + subtle ambient paper room tone.
-  * **Layer 2 (Stage 2 / Boss 1):** Soft brushed percussion and a gentle bass pulse join in; BPM subtly rises (+10%).
-  * **Layer 3 (Stage 3 / Final Boss):** Driving minimalist rhythm, brighter harmonic tension, and faster pulse (+20% BPM).
-  * **Draft Screen:** Low-pass filter sweeps smoothly over the music, creating a calm breath while you pick your upgrade.
-* **Foley / SFX:**
-  * Soft, varied mechanical/pencil-tap sounds per correct keystroke (pitch subtly ascends with combo).
-  * Crisp paper-snip / chime on word completion.
-  * Dull graphite scratch/clunk on typo; heavy ink-blot thud on Smudge proc.
-  * Resonant tonal chord on `!` ability cast.
+* **Adaptive Multi-Section Soundtrack (`src/audio/music.ts`):**
+  * 16-bar, 4-section evolving composition: **Section A (Verse: Dm9→Bbmaj7→Fmaj7→C)**, **Section A' (Turnaround: Dm7→Am7→Bbmaj7→A7)**, **Section B (Lift/Chorus: Bbmaj7→C→Dm→Fmaj7)**, and **Section C (Dramatic Bridge: Gm7→Dm/F→Ebmaj7→A7)**.
+  * Uses a `DynamicsCompressor`, warm chord pads, echo-delayed lead melody, driving saw+sub bass, punchy kick/snare/hat grooves, and **4th-bar tom/snare fills** between sections.
+  * Escalates dynamically in layers and tempo (`88 → 98 → 110 → 120 → 130 BPM`) across Title → Stage 1 → Boss 1/Stage 2 → Boss 2/Stage 3 → Final Boss, and smoothly muffles via low-pass filter on Draft and Pause screens.
+* **Procedural Foley (`src/audio/sound.ts`):** Pencil-tap keystrokes with noise transient + streak pitch climb, deep sub-boom + chime word kills, armor cracks, typo scratch/clunk, Smudge thud, ability chords, and Boss/Victory fanfares.
 
 ---
 
-## 9. Meta-Progression & Cosmetics
+## 7. Architecture & Current Codebase Map
 
-Saved locally in `localStorage` to reward repeat 5-minute runs without breaking roguelike balance:
-
-* **Run Summary & Personal Bests:** Tracks Highest Score, Best WPM, Peak Accuracy %, Total Words Typed, Fastest 3-Stage Clear, and Most Smudges Survived.
-* **Graphite Points (Meta Currency):** Earned at the end of every run based on stages cleared, WPM, and accuracy.
-* **Light Unlocks:**
-  * **Expanded Ability Pool:** Unlock 2–3 extra `!` Glyph abilities (e.g., `!blot`, `!lance`, `!mend`) into the roguelike draft pool after early milestones.
-  * **Paper & Palette Themes (Cosmetic):**
-    * *Warm Parchment* (Default — cream paper, charcoal & crimson)
-    * *Dot Journal* (Crisp ivory with subtle dot-grid)
-    * *Blueprint* (Deep drafting blue, crisp white chalk lines & amber accents)
-    * *Charcoal Night* (Dark mode — slate paper, off-white graphite & vermilion)
-  * **Center Glyph Skins (Cosmetic):** Alternate minimalist geometric center rings (Concentric, Hexagon, Astrolabe, Diamond).
-
----
-
-## 10. Technical Architecture (Browser HTML5)
-
-A lightweight, zero-bloat web stack ensures instant load times and smooth 60fps rendering on both desktop and mobile browsers:
-
-* **Stack:** TypeScript + Vite + HTML5 Canvas 2D (high-DPI `devicePixelRatio` scaling)
-* **Audio:** Web Audio API (procedural/layered stem mixer + low-latency keystroke SFX)
-* **State & Persistence:** Clean decoupled game loop (`fixed timestep update` + `interpolated Canvas render`) with `localStorage` for stats, unlocks, and selected cosmetics.
-* **Proposed Module Structure:**
-  * `src/engine/` — Game loop, Canvas renderer, camera shake, procedural paper grain, input manager (desktop keyboard + custom mobile QWERTY overlay)
-  * `src/game/` — Entities (Player, Enemy, Projectile, Boss), Targeting & Word Manager, Smudge System, Ability System, Wave/Stage Director
-  * `src/data/` — Word lists, Boss passages, Upgrade & Ability definitions, Palette themes
-  * `src/audio/` — Web Audio adaptive music & procedural/sample foley engine
-  * `src/ui/` — Minimalist HUD overlay, Custom Mobile Keyboard, Typing-Selectable Draft Card modal, Title / Run Summary / Unlocks screens
+* **Stack:** TypeScript + Vite + HTML5 Canvas 2D (high-DPI) + Web Audio API (zero external audio/image assets; builds to static `dist/`).
+* **Files Implemented:**
+  * `index.html`, `src/style.css`, `src/main.ts` — Fullscreen high-DPI canvas shell (`touch-action: none`).
+  * `src/game/types.ts` — All entity, boss, ability, weapon, difficulty, and VFX interfaces.
+  * `src/game/game.ts` — Core loop, input (keyboard + multi-touch `pointerdown`), 3-stage wave/boss director, typing draft system, Smudge, all 10 abilities/weapons, desktop & mobile renderers.
+  * `src/ui/mobileKeyboard.ts` — Custom Canvas paper-and-pencil QWERTY keyboard + touch-tap ability bar.
+  * `src/data/words.ts` — Curated short/medium word pools with starting-letter collision avoidance.
+  * `src/data/content.ts` — Difficulty presets, all 10 `!` abilities, 17 upgrade cards, and 3 boss passage configs.
+  * `src/audio/music.ts` & `src/audio/sound.ts` — Multi-section adaptive soundtrack & procedural foley.
+  * `start.bat` — One-click Windows local dev launcher (`npm run dev -- --open`).
+  * `.github/workflows/deploy.yml` & `vite.config.ts` (`base: './'`) — Automated GitHub Pages deployment on push to `main`.
 
 ---
 
-## 11. Development Milestones
+## 8. Roadmap — Next Up (For Handoff)
 
-1. **Milestone 1 — Core Typing Prototype:** Parchment canvas, center glyph, spawning Dots/Rings, letter lock-on, `Backspace` detargeting, per-letter projectiles + knockback, and basic HP/game over.
-2. **Milestone 2 — Smudge, `!` Abilities & Mobile Keyboard:** Smudge Bar + `²` ink-blot proc, shared charge pool, `!` Glyph Cast mode (desktop), custom in-game mobile QWERTY keyboard + touch-tap ability bar, and initial abilities (`!pulse`, `!still`, `!nova`, `!ward`).
-3. **Milestone 3 — 3-Stage Loop & Roguelike Draft:** 5-minute pacing, all 5 enemy archetypes, XP level-ups, typing-to-select 3-card upgrade draft UI, and 5-slot HUD.
-4. **Milestone 4 — The 3 Bosses:** Scrolling passage ticker UI + *The Compass*, *The Eraser*, and *The Architect*.
-5. **Milestone 5 — Audio, Polish & Meta-Progression:** Adaptive Web Audio layers + pencil/paper foley, run summary stats, `localStorage` unlocks, and cosmetic paper themes.
+### Completed
+- [x] Core typing prototype (parchment canvas, per-letter darts, knockback, grey/red readability, `Space`/`Backspace` detarget)
+- [x] Smudge Bar & `²` reinforcement mechanic
+- [x] Shared 100-point charge pool + 10 `!` abilities including flashy weapons (`!swarm`, `!orbit`, `!drone`)
+- [x] 3-stage 5-minute roguelike loop, all 5 enemy archetypes, typing-to-select upgrade cards, and all 3 geometric bosses
+- [x] Multi-section adaptive Web Audio soundtrack + punchy death-boom VFX/foley
+- [x] Title Screen Difficulty Slider (`localStorage` persisted)
+- [x] Auto-detected Mobile portrait UI (custom pure QWERTY keyboard, touch ability bar, vertical draft cards, mobile balance tuning)
+- [x] GitHub repo (`TypingGlyph2`) & automated GitHub Pages deployment
+
+### Remaining / Future Enhancements
+- [ ] **Meta-Progression & Cosmetics (`localStorage`):**
+  - Persistent personal bests (High Score, Best WPM, Peak Accuracy, Fastest 3-Stage Clear, Total Words).
+  - Graphite Points currency earned per run to unlock cosmetic **Paper Themes** (*Warm Parchment*, *Dot Journal*, *Blueprint*, *Charcoal Night*) and **Center Glyph Skins** (Concentric, Hexagon, Astrolabe, Diamond).
+- [ ] **Real-Device Mobile Playtest Polish:** Tune iOS Safari / Android safe-area padding, key hitboxes, or Boss ticker sizing based on hands-on phone feedback.
+- [ ] **Content Expansion:** Additional boss passage variety, more weapon/passive synergies, and endless post-Stage-3 mode option.

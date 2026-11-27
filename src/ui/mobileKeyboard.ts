@@ -20,7 +20,7 @@ export interface AbilityButtonRect {
 const ROWS: string[][] = [
   ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p'],
   ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l'],
-  ['z', 'x', 'c', 'v', 'b', 'n', 'm', 'UNLOCK'],
+  ['z', 'x', 'c', 'v', 'b', 'n', 'm'],
 ];
 
 const PALETTE = {
@@ -101,36 +101,34 @@ export class MobileKeyboardUI {
       });
     }
 
-    // Row 2: Z..M (7 keys) + Backspace/Unlock key (wider on right)
+    // Row 2: Z..M (7 keys centered — no Backspace key)
     {
       const y = kbTop + gapY * 3 + rowH * 2;
-      const unlockW = unitW * 1.65;
-      const row2W = 7 * unitW + unlockW + 7 * gapX;
+      const row2W = 7 * unitW + 6 * gapX;
       const r2X = startX + (maxKbW - row2W) / 2;
       ROWS[2].forEach((k, i) => {
-        const isUnlock = k === 'UNLOCK';
         this.keyRects.push({
           key: k,
-          label: isUnlock ? '⌫' : k.toUpperCase(),
+          label: k.toUpperCase(),
           x: r2X + i * (unitW + gapX),
           y,
-          w: isUnlock ? unlockW : unitW,
+          w: unitW,
           h: rowH,
         });
       });
     }
 
-    // Row 3: Wide thumb-friendly UNLOCK bar (acts like Space/Backspace)
+    // Row 3: Wide thumb-friendly SPACE / UNLOCK TARGET bar
     {
       const y = kbTop + gapY * 4 + rowH * 3;
-      const barW = maxKbW * 0.54;
+      const barW = maxKbW * 0.62;
       this.keyRects.push({
         key: 'UNLOCK',
-        label: 'UNLOCK TARGET',
+        label: 'SPACE  ·  UNLOCK TARGET',
         x: startX + (maxKbW - barW) / 2,
         y,
         w: barW,
-        h: rowH * 0.88,
+        h: rowH * 0.9,
       });
     }
 
@@ -190,7 +188,8 @@ export class MobileKeyboardUI {
     height: number,
     equippedAbilities: AbilityDef[],
     charge: number,
-    showAbilityBar: boolean
+    showAbilityBar: boolean,
+    hasLockedTarget = false
   ): void {
     ctx.save();
 
@@ -258,16 +257,29 @@ export class MobileKeyboardUI {
     for (const r of this.keyRects) {
       const pressed = this.pressedTimers.has(`${r.key}_${Math.round(r.x)}`);
       const isUnlock = r.key === 'UNLOCK';
+      const unlockActive = isUnlock && hasLockedTarget;
 
-      ctx.fillStyle = pressed ? PALETTE.keyPressedBg : isUnlock ? '#EAE5DB' : PALETTE.keyBg;
+      ctx.fillStyle = pressed
+        ? PALETTE.keyPressedBg
+        : unlockActive
+          ? '#F3E8E6'
+          : isUnlock
+            ? '#EAE5DB'
+            : PALETTE.keyBg;
       this.roundRect(ctx, r.x, r.y, r.w, r.h, 5);
       ctx.fill();
 
-      ctx.strokeStyle = pressed ? PALETTE.crimson : PALETTE.keyBorder;
-      ctx.lineWidth = 1;
+      ctx.strokeStyle = pressed || unlockActive ? PALETTE.crimson : PALETTE.keyBorder;
+      ctx.lineWidth = unlockActive ? 1.5 : 1;
       ctx.stroke();
 
-      ctx.fillStyle = pressed ? PALETTE.keyPressedText : isUnlock ? PALETTE.inkMuted : PALETTE.ink;
+      ctx.fillStyle = pressed
+        ? PALETTE.keyPressedText
+        : unlockActive
+          ? PALETTE.crimson
+          : isUnlock
+            ? PALETTE.inkMuted
+            : PALETTE.ink;
       ctx.font = isUnlock
         ? '600 11px "DM Sans", "Inter", system-ui, sans-serif'
         : '600 16px "DM Sans", "Inter", system-ui, sans-serif';

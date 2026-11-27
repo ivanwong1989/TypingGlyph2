@@ -452,12 +452,14 @@ export class TypingGlyphGame {
     this.wordsCompleted = 0;
     this.streak = 0;
     this.bestStreak = 0;
-    this.spawnTimer = 0.5;
+    this.spawnTimer = this.isMobileMode() ? 1.6 : 0.5;
     this.screenShake = 0;
     this.damageFlash = 0;
 
     this.spawnEnemy('dot');
-    this.spawnEnemy('dot');
+    if (!this.isMobileMode()) {
+      this.spawnEnemy('dot');
+    }
   }
 
   private getEquippedAbilityDefs(): AbilityDef[] {
@@ -489,7 +491,7 @@ export class TypingGlyphGame {
         this.startNewRun();
         return;
       }
-      if (key === 'Backspace' || key === ' ') {
+      if (key === ' ') {
         e.preventDefault();
         this.titleBuffer = '';
         return;
@@ -520,7 +522,7 @@ export class TypingGlyphGame {
         this.startNewRun();
         return;
       }
-      if (key === 'Backspace') {
+      if (key === ' ') {
         e.preventDefault();
         this.retryBuffer = '';
         return;
@@ -546,7 +548,7 @@ export class TypingGlyphGame {
 
     // Typing-to-select Upgrade Draft
     if (this.mode === 'draft') {
-      if (key === 'Backspace' || key === ' ') {
+      if (key === ' ') {
         e.preventDefault();
         if (this.draftLockedIndex !== null) {
           this.draftLockedIndex = null;
@@ -575,8 +577,8 @@ export class TypingGlyphGame {
 
     if (this.mode !== 'playing') return;
 
-    // Detargeting / canceling ability mode (Backspace OR Spacebar!)
-    if (key === 'Backspace' || key === ' ') {
+    // Detargeting / canceling ability mode (Spacebar only)
+    if (key === ' ') {
       e.preventDefault();
       if (this.abilityMode) {
         this.abilityMode = false;
@@ -1068,8 +1070,9 @@ export class TypingGlyphGame {
     const bossNextLetter = this.getBossExpectedLetter();
     const matchesBoss = this.boss !== null && bossNextLetter === letter;
 
-    // Prioritize urgent minion if close (< 250px), otherwise allow Boss lock
-    if (matchesBoss && (!bestEnemy || bestDist > 250)) {
+    // Prioritize urgent minion if close, otherwise allow Boss lock
+    const urgentDist = this.isMobileMode() ? 110 : 250;
+    if (matchesBoss && (!bestEnemy || bestDist > urgentDist)) {
       this.bossLocked = true;
       this.tryTypeBossLetter(letter);
       return;
@@ -1138,7 +1141,7 @@ export class TypingGlyphGame {
 
     const cx = this.width / 2;
     const cy = this.getArenaCenterY();
-    const bossY = 98;
+    const bossY = this.isMobileMode() ? 94 : 104;
 
     this.projectiles.push({
       x: cx,
@@ -1197,12 +1200,13 @@ export class TypingGlyphGame {
       isFinal: isWordComplete,
     });
 
-    // Radial knockback scaled by passives
+    // Radial knockback scaled by passives (slightly stronger on mobile for breathing room)
     const dx = enemy.x - cx;
     const dy = enemy.y - cy;
     const dist = Math.hypot(dx, dy) || 1;
     const baseKnock = isWordComplete ? 160 : 54;
-    const knock = baseKnock * this.passives.knockbackMult;
+    const mobileKnockBoost = this.isMobileMode() ? 1.2 : 1;
+    const knock = baseKnock * this.passives.knockbackMult * mobileKnockBoost;
     enemy.knockVx += (dx / dist) * knock;
     enemy.knockVy += (dy / dist) * knock;
 
@@ -1463,8 +1467,9 @@ export class TypingGlyphGame {
       const cy = this.getArenaCenterY();
       const arenaHalfH = Math.max(110, (this.getArenaBottomY() - 56) / 2);
 
+      const mobile = this.isMobileMode();
       if (b.id === 'compass') {
-        // Synchronized ring of 4 Dots
+        // Synchronized ring of Dots (fewer & wider on mobile to avoid crowding)
         this.ripples.push({
           x: cx,
           y: cy,
@@ -1476,13 +1481,21 @@ export class TypingGlyphGame {
           lineWidth: 1.5,
           dashed: true,
         });
-        const baseA = Math.random() * Math.PI * 2;
-        const r = Math.min(cx - 26, arenaHalfH - 12);
-        for (let i = 0; i < 4; i++) {
-          const a = baseA + (i * Math.PI) / 2;
-          this.spawnDotAt(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+        if (mobile) {
+          // Spawn 3 well-spaced Dots at the outer perimeter via anti-clump spawner
+          this.spawnEnemy('dot');
+          this.spawnEnemy('dot');
+          this.spawnEnemy('dot');
+          b.attackTimer = 9.5;
+        } else {
+          const baseA = Math.random() * Math.PI * 2;
+          const r = Math.min(cx - 26, arenaHalfH - 12);
+          for (let i = 0; i < 4; i++) {
+            const a = baseA + (i * Math.PI) / 2;
+            this.spawnDotAt(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+          }
+          b.attackTimer = 7.5;
         }
-        b.attackTimer = 7.5;
       } else if (b.id === 'eraser') {
         // Sweep Erase Wave across the page, fading 1-2 letters on active minions
         b.eraseWaveY = 120;
@@ -1498,18 +1511,18 @@ export class TypingGlyphGame {
         }
         this.spawnEnemy('arrow');
         this.spawnEnemy('ring');
-        b.attackTimer = 7.2;
+        b.attackTimer = mobile ? 9.5 : 7.2;
       } else if (b.id === 'architect') {
         if (b.phase === 1) {
           this.spawnEnemy('arrow');
-          this.spawnEnemy('arrow');
+          if (!mobile) this.spawnEnemy('arrow');
           this.spawnEnemy('diamond');
-          b.attackTimer = 7.0;
+          b.attackTimer = mobile ? 9.0 : 7.0;
         } else {
           this.spawnEnemy('pentagon');
           this.spawnEnemy('dot');
-          this.spawnEnemy('arrow');
-          b.attackTimer = 6.2;
+          if (!mobile) this.spawnEnemy('arrow');
+          b.attackTimer = mobile ? 8.2 : 6.2;
         }
       }
     }
@@ -1593,6 +1606,9 @@ export class TypingGlyphGame {
 
   private pickFreshWord(kind: EnemyKind): string {
     const used = new Set<string>(this.enemies.map((e) => e.word[0]));
+    // Avoid starting-letter collision with the Boss's current expected letter
+    const bossLetter = this.getBossExpectedLetter();
+    if (bossLetter) used.add(bossLetter);
     // Mobile ergonomic tuning: favor shorter 3-4 letter words for two-thumb comfort
     const useShort =
       kind === 'dot' || kind === 'arrow' || (this.isMobileMode() && Math.random() < 0.78);
@@ -1600,11 +1616,21 @@ export class TypingGlyphGame {
     return pickWord(pool, used);
   }
 
+  private getMobileSpeedMultiplier(): number {
+    if (!this.isMobileMode()) return 1;
+    const cx = this.width / 2;
+    const cy = this.getArenaCenterY();
+    const arenaBottom = this.getArenaBottomY();
+    const minRadius = Math.min(cx - 12, cy - 56, arenaBottom - cy - 10);
+    // Scale enemy speed proportionally to the smaller portrait arena so players have fair typing time
+    return Math.max(0.38, Math.min(0.56, (minRadius / 340) * 0.72));
+  }
+
   private spawnDotAt(x: number, y: number): void {
     const cx = this.width / 2;
     const cy = this.getArenaCenterY();
     const diff = this.getDifficulty();
-    const mobileSpeedMult = this.isMobileMode() ? 0.72 : 1;
+    const mobileSpeedMult = this.getMobileSpeedMultiplier();
     const speedScale = (1 + (this.stage - 1) * 0.14) * diff.speedMult * mobileSpeedMult;
     this.enemies.push({
       id: this.nextEnemyId++,
@@ -1657,22 +1683,52 @@ export class TypingGlyphGame {
       }
     }
 
-    const angle = Math.random() * Math.PI * 2;
-    const halfW = cx - 34;
-    const halfHTop = Math.max(80, cy - 64);
-    const halfHBot = Math.max(80, arenaBottom - cy - 16);
-    const cos = Math.cos(angle);
-    const sin = Math.sin(angle);
-    const scaleX = Math.abs(cos) > 0.001 ? halfW / Math.abs(cos) : 9999;
-    const targetHalfH = sin >= 0 ? halfHBot : halfHTop;
-    const scaleY = Math.abs(sin) > 0.001 ? targetHalfH / Math.abs(sin) : 9999;
-    const edgeDist = Math.min(scaleX, scaleY) + (this.isMobileMode() ? 14 : 34);
+    const mobile = this.isMobileMode();
+    const halfW = mobile ? cx - 10 : cx - 34;
+    const halfHTop = Math.max(80, cy - (mobile ? 56 : 64));
+    const halfHBot = Math.max(80, arenaBottom - cy - (mobile ? 8 : 16));
 
-    const x = Math.max(24, Math.min(this.width - 24, cx + cos * edgeDist));
-    const y = Math.max(54, Math.min(arenaBottom - 10, cy + sin * edgeDist));
+    // Anti-clumping: sample 10 perimeter candidates and pick the best-spaced spawn point
+    let x = cx;
+    let y = 54;
+    let bestScore = -Infinity;
+    const candidates = 10;
+    const baseOffset = Math.random() * Math.PI * 2;
+    for (let i = 0; i < candidates; i++) {
+      const angle = baseOffset + (i / candidates) * Math.PI * 2 + (Math.random() - 0.5) * 0.35;
+      const cos = Math.cos(angle);
+      const sin = Math.sin(angle);
+      const scaleX = Math.abs(cos) > 0.001 ? halfW / Math.abs(cos) : 9999;
+      const targetHalfH = sin >= 0 ? halfHBot : halfHTop;
+      const scaleY = Math.abs(sin) > 0.001 ? targetHalfH / Math.abs(sin) : 9999;
+      const edgeDist = Math.min(scaleX, scaleY) + (mobile ? 8 : 34);
+
+      const candX = Math.max(mobile ? 12 : 24, Math.min(this.width - (mobile ? 12 : 24), cx + cos * edgeDist));
+      const candY = Math.max(54, Math.min(arenaBottom - (mobile ? 6 : 10), cy + sin * edgeDist));
+
+      let minDist = 9999;
+      for (const en of this.enemies) {
+        const d = Math.hypot(en.x - candX, en.y - candY);
+        if (d < minDist) minDist = d;
+      }
+
+      // Avoid spawning on top of the Boss ticker header
+      let penalty = 0;
+      if (this.boss && candY < (mobile ? 175 : 190)) {
+        penalty = 220;
+      }
+      // Prefer slightly farther corners on mobile for extra reaction runway
+      const distFromPlayer = Math.hypot(candX - cx, candY - cy);
+      const score = minDist + (mobile ? distFromPlayer * 0.35 : 0) - penalty;
+      if (score > bestScore) {
+        bestScore = score;
+        x = candX;
+        y = candY;
+      }
+    }
 
     const diff = this.getDifficulty();
-    const mobileSpeedMult = this.isMobileMode() ? 0.72 : 1;
+    const mobileSpeedMult = this.getMobileSpeedMultiplier();
     const speedScale =
       (1 + (this.stage - 1) * 0.14 + Math.min(this.stageTimer / 200, 0.2)) * diff.speedMult * mobileSpeedMult;
     const word = this.pickFreshWord(kind);
@@ -1812,14 +1868,17 @@ export class TypingGlyphGame {
         this.spawnTimer -= dt;
         if (this.spawnTimer <= 0) {
           const diff = this.getDifficulty();
-          const mobRate = this.isMobileMode() ? 0.82 : 1;
+          const mobile = this.isMobileMode();
+          const mobRate = mobile ? 0.64 : 1;
           const effRate = diff.spawnRateMult * mobRate;
-          const maxActive = Math.min(18, Math.round((5 + this.stage * 2.5 + Math.floor(this.stageTimer / 22)) * effRate));
+          const maxCap = mobile ? 9 : 18;
+          const maxActive = Math.min(maxCap, Math.round((5 + this.stage * 2.5 + Math.floor(this.stageTimer / 22)) * effRate));
           if (this.enemies.length < Math.max(3, maxActive)) {
             this.spawnEnemy();
           }
-          const baseInterval = Math.max(0.75, 2.25 - (this.stage - 1) * 0.32 - this.stageTimer * 0.007) / effRate;
-          this.spawnTimer = baseInterval * (0.85 + Math.random() * 0.3);
+          const minInterval = mobile ? 1.25 : 0.75;
+          const baseInterval = Math.max(minInterval, 2.25 - (this.stage - 1) * 0.32 - this.stageTimer * 0.007) / effRate;
+          this.spawnTimer = baseInterval * (0.88 + Math.random() * 0.24);
         }
       }
     } else {
@@ -2390,14 +2449,15 @@ export class TypingGlyphGame {
       ctx.restore();
     }
 
-    // 8. Targeting sightline
+    // 8. Targeting sightline (crisp animated crimson dashed line to active target)
     if (this.lockedEnemyId !== null) {
       const locked = this.enemies.find((e) => e.id === this.lockedEnemyId);
       if (locked) {
         ctx.save();
-        ctx.strokeStyle = 'rgba(184, 58, 58, 0.22)';
-        ctx.lineWidth = 1.2;
-        ctx.setLineDash([4, 6]);
+        ctx.strokeStyle = 'rgba(184, 58, 58, 0.52)';
+        ctx.lineWidth = 1.8;
+        ctx.setLineDash([6, 6]);
+        ctx.lineDashOffset = -this.pulseTime * 28;
         ctx.beginPath();
         ctx.moveTo(cx, cy);
         ctx.lineTo(locked.x, locked.y);
@@ -2405,13 +2465,15 @@ export class TypingGlyphGame {
         ctx.restore();
       }
     } else if (this.boss && this.bossLocked) {
+      const targetY = this.isMobileMode() ? 152 : 166;
       ctx.save();
-      ctx.strokeStyle = 'rgba(184, 58, 58, 0.24)';
-      ctx.lineWidth = 1.2;
-      ctx.setLineDash([4, 6]);
+      ctx.strokeStyle = 'rgba(184, 58, 58, 0.55)';
+      ctx.lineWidth = 1.8;
+      ctx.setLineDash([6, 6]);
+      ctx.lineDashOffset = -this.pulseTime * 28;
       ctx.beginPath();
       ctx.moveTo(cx, cy);
-      ctx.lineTo(cx, 128);
+      ctx.lineTo(cx, targetY);
       ctx.stroke();
       ctx.restore();
     }
@@ -2520,7 +2582,8 @@ export class TypingGlyphGame {
         this.height,
         this.getEquippedAbilityDefs(),
         this.charge,
-        true
+        true,
+        this.lockedEnemyId !== null || this.bossLocked
       );
     } else {
       this.renderBottomHud();
@@ -2655,17 +2718,33 @@ export class TypingGlyphGame {
     const ctx = this.ctx;
     const shakeX = en.shakeTimer > 0 ? Math.sin(en.shakeTimer * 70) * 4 : 0;
     const scale = en.spawnAnim * en.hitScale;
+    const otherTargetLocked = (this.lockedEnemyId !== null && !isLocked) || this.bossLocked;
 
     ctx.save();
     ctx.translate(en.x + shakeX, en.y);
     ctx.scale(scale, scale);
 
     if (isLocked) {
-      ctx.strokeStyle = 'rgba(184, 58, 58, 0.42)';
-      ctx.lineWidth = 1.4;
+      // Crisp pulsing crimson targeting reticle + crosshair ticks
+      const pulse = Math.sin(this.pulseTime * 7) * 1.4;
+      const reticleR = en.radius + 9 + pulse;
+      ctx.save();
+      ctx.rotate(this.pulseTime * 1.2);
+      ctx.strokeStyle = 'rgba(184, 58, 58, 0.85)';
+      ctx.lineWidth = 1.8;
+      ctx.setLineDash([5, 4]);
       ctx.beginPath();
-      ctx.arc(0, 0, en.radius + 7, 0, Math.PI * 2);
+      ctx.arc(0, 0, reticleR, 0, Math.PI * 2);
       ctx.stroke();
+      ctx.setLineDash([]);
+      for (let i = 0; i < 4; i++) {
+        const a = (i * Math.PI) / 2;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a) * (reticleR - 3), Math.sin(a) * (reticleR - 3));
+        ctx.lineTo(Math.cos(a) * (reticleR + 4), Math.sin(a) * (reticleR + 4));
+        ctx.stroke();
+      }
+      ctx.restore();
     }
 
     const fill = en.hitFlash > 0 ? PALETTE.ink : PALETTE.crimson;
@@ -2731,16 +2810,47 @@ export class TypingGlyphGame {
 
     // Word label above enemy
     ctx.save();
-    const fontSize = isLocked ? 17 : 15;
+    if (otherTargetLocked) {
+      ctx.globalAlpha = 0.52;
+    }
+    const fontSize = isLocked ? 18 : 15;
     ctx.font = `${isLocked ? '600' : '400'} ${fontSize}px "DM Sans", "Inter", system-ui, sans-serif`;
     ctx.textBaseline = 'middle';
 
     const fullW = ctx.measureText(en.word).width;
     const rawWordX = en.x + shakeX - fullW / 2;
-    const wordX = Math.max(14, Math.min(this.width - fullW - 14, rawWordX));
-    const wordY = en.y - en.radius - 18;
+    const wordX = Math.max(18, Math.min(this.width - fullW - 18, rawWordX));
+    const wordY = en.y - en.radius - (isLocked ? 22 : 18);
 
-    if (en.armor > 1) {
+    if (isLocked) {
+      // Unmistakable crimson-framed word pill for the currently targeted enemy
+      const padX = 9;
+      const padY = 5;
+      const boxW = fullW + padX * 2;
+      const boxH = fontSize + padY * 2;
+      ctx.fillStyle = 'rgba(248, 246, 241, 0.95)';
+      ctx.fillRect(wordX - padX, wordY - boxH / 2, boxW, boxH);
+      ctx.strokeStyle = PALETTE.crimson;
+      ctx.lineWidth = 1.8;
+      ctx.strokeRect(wordX - padX, wordY - boxH / 2, boxW, boxH);
+
+      // Small crimson target pointer triangle on the left edge
+      ctx.fillStyle = PALETTE.crimson;
+      ctx.beginPath();
+      ctx.moveTo(wordX - padX - 6, wordY - 4);
+      ctx.lineTo(wordX - padX - 1, wordY);
+      ctx.lineTo(wordX - padX - 6, wordY + 4);
+      ctx.closePath();
+      ctx.fill();
+
+      if (en.armor > 1) {
+        ctx.font = '600 10px "DM Sans", "Inter", system-ui, sans-serif';
+        ctx.fillStyle = en.isSmudged ? PALETTE.crimson : PALETTE.inkMuted;
+        ctx.textAlign = 'left';
+        ctx.fillText(String(en.armor), wordX + fullW + padX + 3, wordY - boxH / 2 + 2);
+        ctx.font = `600 ${fontSize}px "DM Sans", "Inter", system-ui, sans-serif`;
+      }
+    } else if (en.armor > 1) {
       const padX = 7;
       const padY = 4;
       const boxW = fullW + padX * 2;
@@ -2755,7 +2865,7 @@ export class TypingGlyphGame {
       ctx.fillStyle = en.isSmudged ? PALETTE.crimson : PALETTE.inkMuted;
       ctx.textAlign = 'left';
       ctx.fillText(String(en.armor), wordX + fullW + padX + 3, wordY - boxH / 2 + 2);
-      ctx.font = `${isLocked ? '600' : '400'} ${fontSize}px "DM Sans", "Inter", system-ui, sans-serif`;
+      ctx.font = `400 ${fontSize}px "DM Sans", "Inter", system-ui, sans-serif`;
     }
 
     // Draw letter-by-letter: strictly RED (typed) and GREY (untyped) for instant readability
@@ -2781,7 +2891,10 @@ export class TypingGlyphGame {
     if (!this.boss) return;
     const b = this.boss;
     const ctx = this.ctx;
+    const mobile = this.isMobileMode();
     const shakeX = b.shakeTimer > 0 ? Math.sin(b.shakeTimer * 70) * 5 : 0;
+    const isBossLocked = this.bossLocked;
+    const isEnemyLocked = this.lockedEnemyId !== null;
 
     ctx.save();
     ctx.globalAlpha = b.enterAnim;
@@ -2789,21 +2902,37 @@ export class TypingGlyphGame {
     // Boss Title + HP Bar
     const pct = Math.min(1, b.typedIndex / b.passage.length);
     const barW = 130;
+    const titleY = mobile ? 58 : 64;
+    const barY = mobile ? 66 : 72;
+    const emblemY = mobile ? 94 : 104;
+    const tickerY = mobile ? 134 : 148;
+
     ctx.textAlign = 'center';
-    ctx.fillStyle = PALETTE.ink;
-    ctx.font = '600 16px "DM Sans", "Inter", system-ui, sans-serif';
-    ctx.fillText(`Defeat ${b.name}!`, cx, 64);
+    ctx.fillStyle = isBossLocked ? PALETTE.crimson : PALETTE.ink;
+    ctx.font = `600 ${mobile ? 15 : 16}px "DM Sans", "Inter", system-ui, sans-serif`;
+    ctx.fillText(isBossLocked ? `● TARGETING ${b.name.toUpperCase()}` : `Defeat ${b.name}!`, cx, titleY);
 
     ctx.fillStyle = PALETTE.inkFaint;
-    ctx.fillRect(cx - barW / 2, 72, barW, 4);
+    ctx.fillRect(cx - barW / 2, barY, barW, 4);
     ctx.fillStyle = PALETTE.crimson;
-    ctx.fillRect(cx - barW / 2, 72, barW * (1 - pct), 4);
+    ctx.fillRect(cx - barW / 2, barY, barW * (1 - pct), 4);
 
     // Boss Geometric Emblem
-    const emblemY = 104;
     ctx.save();
     ctx.translate(cx + shakeX, emblemY);
-    const col = b.hitFlash > 0 ? PALETTE.crimson : PALETTE.ink;
+    if (isBossLocked) {
+      const pulse = Math.sin(this.pulseTime * 6) * 1.5;
+      ctx.save();
+      ctx.rotate(-this.pulseTime * 0.9);
+      ctx.strokeStyle = 'rgba(184, 58, 58, 0.78)';
+      ctx.lineWidth = 1.6;
+      ctx.setLineDash([6, 5]);
+      ctx.beginPath();
+      ctx.arc(0, 0, 27 + pulse, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+    const col = b.hitFlash > 0 || isBossLocked ? PALETTE.crimson : PALETTE.ink;
     ctx.strokeStyle = col;
     ctx.fillStyle = col;
     ctx.lineWidth = 2;
@@ -2853,26 +2982,40 @@ export class TypingGlyphGame {
     }
     ctx.restore();
 
-    // Scrolling Horizontal Passage Ticker (matching reference image!)
-    const tickerY = 148;
-    const tickerW = Math.min(540, this.width - 80);
+    // Scrolling Horizontal Passage Ticker (clearly reflects Boss lock state!)
+    const tickerW = Math.min(540, this.width - (mobile ? 28 : 80));
+    const tickerH = mobile ? 34 : 38;
 
-    // Subtle faded ticker ribbon
-    const ribbonGrad = ctx.createLinearGradient(cx - tickerW / 2, 0, cx + tickerW / 2, 0);
-    ribbonGrad.addColorStop(0, 'rgba(242, 239, 233, 0)');
-    ribbonGrad.addColorStop(0.15, 'rgba(220, 215, 206, 0.55)');
-    ribbonGrad.addColorStop(0.85, 'rgba(220, 215, 206, 0.55)');
-    ribbonGrad.addColorStop(1, 'rgba(242, 239, 233, 0)');
-    ctx.fillStyle = ribbonGrad;
-    ctx.fillRect(cx - tickerW / 2, tickerY - 19, tickerW, 38);
+    ctx.save();
+    // Dim the boss ticker whenever the player is actively targeting a minion
+    if (isEnemyLocked) {
+      ctx.globalAlpha = b.enterAnim * 0.45;
+    }
+
+    if (isBossLocked) {
+      // Elevated parchment frame with crisp crimson border when Boss is targeted
+      ctx.fillStyle = 'rgba(248, 246, 241, 0.94)';
+      ctx.fillRect(cx - tickerW / 2, tickerY - tickerH / 2, tickerW, tickerH);
+      ctx.strokeStyle = PALETTE.crimson;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(cx - tickerW / 2, tickerY - tickerH / 2, tickerW, tickerH);
+    } else {
+      const ribbonGrad = ctx.createLinearGradient(cx - tickerW / 2, 0, cx + tickerW / 2, 0);
+      ribbonGrad.addColorStop(0, 'rgba(242, 239, 233, 0)');
+      ribbonGrad.addColorStop(0.15, 'rgba(220, 215, 206, 0.55)');
+      ribbonGrad.addColorStop(0.85, 'rgba(220, 215, 206, 0.55)');
+      ribbonGrad.addColorStop(1, 'rgba(242, 239, 233, 0)');
+      ctx.fillStyle = ribbonGrad;
+      ctx.fillRect(cx - tickerW / 2, tickerY - tickerH / 2, tickerW, tickerH);
+    }
 
     // Clip to ticker width
     ctx.save();
     ctx.beginPath();
-    ctx.rect(cx - tickerW / 2, tickerY - 22, tickerW, 44);
+    ctx.rect(cx - tickerW / 2 + 4, tickerY - tickerH / 2 - 2, tickerW - 8, tickerH + 4);
     ctx.clip();
 
-    ctx.font = '500 22px "DM Sans", "Inter", system-ui, sans-serif';
+    ctx.font = `500 ${mobile ? 19 : 22}px "DM Sans", "Inter", system-ui, sans-serif`;
     ctx.textBaseline = 'middle';
     ctx.textAlign = 'left';
 
@@ -2888,19 +3031,29 @@ export class TypingGlyphGame {
     ctx.fillText(untypedPart, cx + shakeX, tickerY);
     ctx.restore();
 
-    // Vertical crimson cursor line & % progress
-    ctx.strokeStyle = PALETTE.crimson;
-    ctx.lineWidth = 1.6;
+    // Vertical cursor line (crimson when targeting Boss, muted grey when not)
+    ctx.strokeStyle = isBossLocked ? PALETTE.crimson : PALETTE.inkMuted;
+    ctx.lineWidth = isBossLocked ? 2 : 1.3;
     ctx.beginPath();
-    ctx.moveTo(cx, tickerY - 18);
-    ctx.lineTo(cx, tickerY + 18);
+    ctx.moveTo(cx, tickerY - tickerH / 2 + 1);
+    ctx.lineTo(cx, tickerY + tickerH / 2 - 1);
     ctx.stroke();
 
+    // Progress + clear targeting status hint below ticker
     ctx.font = '600 11px "DM Sans", "Inter", system-ui, sans-serif';
-    ctx.fillStyle = PALETTE.inkMuted;
+    ctx.fillStyle = isBossLocked ? PALETTE.crimson : PALETTE.inkMuted;
     ctx.textAlign = 'center';
-    ctx.fillText(`${Math.round(pct * 100)}%`, cx, tickerY + 29);
+    const nextLetter = this.getBossExpectedLetter();
+    const statusHint = isBossLocked
+      ? `${Math.round(pct * 100)}%  ·  ${mobile ? 'Tap UNLOCK to switch to minions' : 'Space to switch to minions'}`
+      : isEnemyLocked
+        ? `${Math.round(pct * 100)}%  ·  Targeting minion`
+        : nextLetter
+          ? `${Math.round(pct * 100)}%  ·  Type '${nextLetter}' to target boss`
+          : `${Math.round(pct * 100)}%`;
+    ctx.fillText(statusHint, cx, tickerY + tickerH / 2 + 12);
 
+    ctx.restore();
     ctx.restore();
   }
 
@@ -2933,7 +3086,7 @@ export class TypingGlyphGame {
 
     ctx.font = '400 11px "DM Sans", "Inter", system-ui, sans-serif';
     ctx.fillStyle = PALETTE.inkMuted;
-    ctx.fillText(hints || 'Backspace to cancel', 0, -26);
+    ctx.fillText(hints || 'Space to cancel', 0, -26);
     ctx.restore();
   }
 
@@ -3045,7 +3198,7 @@ export class TypingGlyphGame {
     ctx.fillStyle = PALETTE.inkMuted;
     ctx.textAlign = 'center';
     ctx.fillText(
-      'Type words to shoot  ·  Space / Backspace detarget  ·  ! + command for abilities  ·  Esc pause',
+      'Type words to shoot  ·  Space detarget  ·  ! + command for abilities  ·  Esc pause',
       cx,
       this.height - 9
     );
@@ -3101,7 +3254,7 @@ export class TypingGlyphGame {
     ctx.fillStyle = PALETTE.inkMuted;
     ctx.font = '400 13px "DM Sans", "Inter", system-ui, sans-serif';
     ctx.fillText(
-      mobile ? 'Tap an upgrade card to select it' : 'Type a card’s keyword to select it  ·  Space / Backspace to cancel',
+      mobile ? 'Tap an upgrade card to select it' : 'Type a card’s keyword to select it  ·  Space to cancel',
       cx,
       headerY + 24
     );
@@ -3370,7 +3523,7 @@ export class TypingGlyphGame {
     ctx.fillText(
       mobile
         ? 'Built-in QWERTY keyboard  ·  Tap ability buttons  ·  Mobile pace tuned'
-        : 'A–Z Lock & Fire   ·   Space / Backspace Detarget   ·   !pulse & Drafted Weapons',
+        : 'A–Z Lock & Fire   ·   Space Detarget   ·   !pulse & Drafted Weapons',
       cx,
       this.height - 24
     );
